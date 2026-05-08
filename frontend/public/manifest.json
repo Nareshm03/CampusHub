@@ -1,0 +1,40 @@
+{
+  "name": "CampusHub - Campus Management System",
+  "short_name": "CampusHub",
+  "description": "Modern campus management system for students, faculty, and administrators",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#3b82f6",
+  "orientation": "portrait-primary",
+  "categories": ["education", "productivity"],
+  "lang": "en",
+  "icons": [
+    {
+      "src": "/icons/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "View Attendance",
+      "short_name": "Attendance",
+      "description": "Check your recent attendance records",
+      "url": "/attendance"
+    },
+    {
+      "name": "Check Exams",
+      "short_name": "Exams",
+      "description": "View upcoming exams and results",
+      "url": "/exams"
+    }
+  ]
+}
