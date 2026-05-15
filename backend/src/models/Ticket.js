@@ -3,8 +3,7 @@ const mongoose = require('mongoose');
 const ticketSchema = new mongoose.Schema({
   ticketId: {
     type: String,
-    unique: true,
-    required: true
+    unique: true
   },
   title: {
     type: String,
@@ -55,8 +54,8 @@ const ticketSchema = new mongoose.Schema({
   timestamps: true
 });
 
-ticketSchema.pre('validate', function(next) {
-  if (this.isNew && !this.ticketId) {
+ticketSchema.pre('save', function(next) {
+  if (!this.ticketId) {
     this.ticketId = `TKT${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
   }
   next();
