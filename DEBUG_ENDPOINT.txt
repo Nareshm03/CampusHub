@@ -1,0 +1,36 @@
+// Add this temporarily to backend/src/routes/auth.js for debugging
+
+router.post('/test-login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    
+    const user = await User.findOne({ email }).select('+password');
+    
+    if (!user) {
+      return res.json({ 
+        success: false, 
+        error: 'User not found',
+        email: email 
+      });
+    }
+
+    const isMatch = await user.matchPassword(password);
+    
+    return res.json({
+      success: true,
+      userFound: true,
+      passwordMatch: isMatch,
+      userEmail: user.email,
+      userName: user.name,
+      userRole: user.role,
+      passwordLength: password.length,
+      hashedPasswordPrefix: user.password.substring(0, 20)
+    });
+
+  } catch (error) {
+    return res.json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});

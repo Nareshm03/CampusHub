@@ -19,7 +19,7 @@ const assignmentSchema = new mongoose.Schema({
   },
   faculty: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
+    ref: 'Faculty',
     required: [true, 'Faculty is required'],
     index: true
   },

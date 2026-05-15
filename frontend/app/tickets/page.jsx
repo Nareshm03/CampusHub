@@ -20,10 +20,10 @@ export default function TicketsPage() {
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [formData, setFormData] = useState({
-    subject: '',
+    title: '',
     description: '',
-    priority: 'MEDIUM',
-    category: 'TECHNICAL'
+    priority: 'medium',
+    category: 'it_support'
   });
   const [submitting, setSubmitting] = useState(false);
 
@@ -48,7 +48,7 @@ export default function TicketsPage() {
     try {
       await api.post('/tickets', formData);
       setShowCreateModal(false);
-      setFormData({ subject: '', description: '', priority: 'MEDIUM', category: 'TECHNICAL' });
+      setFormData({ title: '', description: '', priority: 'medium', category: 'it_support' });
       fetchTickets();
     } catch (error) {
       console.error('Error creating ticket:', error);
@@ -164,12 +164,12 @@ export default function TicketsPage() {
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Subject
+                    Title
                   </label>
                   <input
                     type="text"
-                    value={formData.subject}
-                    onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
+                    value={formData.title}
+                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                     className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
                     required
                   />
@@ -196,10 +196,10 @@ export default function TicketsPage() {
                       onChange={(e) => setFormData({ ...formData, priority: e.target.value })}
                       className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
                     >
-                      <option value="LOW">Low</option>
-                      <option value="MEDIUM">Medium</option>
-                      <option value="HIGH">High</option>
-                      <option value="URGENT">Urgent</option>
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
+                      <option value="urgent">Urgent</option>
                     </select>
                   </div>
                   <div>
@@ -211,10 +211,14 @@ export default function TicketsPage() {
                       onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                       className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
                     >
-                      <option value="TECHNICAL">Technical</option>
-                      <option value="ACCOUNT">Account</option>
-                      <option value="ACADEMIC">Academic</option>
-                      <option value="OTHER">Other</option>
+                      <option value="it_support">IT Support</option>
+                      <option value="academic">Academic</option>
+                      <option value="hostel">Hostel</option>
+                      <option value="maintenance">Maintenance</option>
+                      <option value="transport">Transport</option>
+                      <option value="library">Library</option>
+                      <option value="canteen">Canteen</option>
+                      <option value="other">Other</option>
                     </select>
                   </div>
                 </div>

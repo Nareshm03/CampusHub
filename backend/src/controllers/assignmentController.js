@@ -33,7 +33,7 @@ exports.createAssignment = async (req, res) => {
 
     // Verify faculty teaches this subject
     if (req.user.role === 'FACULTY') {
-      const faculty = await Faculty.findOne({ user: req.user._id });
+      const faculty = await Faculty.findOne({ userId: req.user._id });
       if (!faculty) {
         return res.status(404).json({
           success: false,
@@ -54,7 +54,7 @@ exports.createAssignment = async (req, res) => {
       title,
       description,
       subject,
-      faculty: req.user.role === 'FACULTY' ? (await Faculty.findOne({ user: req.user._id }))._id : req.body.faculty,
+      faculty: req.user.role === 'FACULTY' ? (await Faculty.findOne({ userId: req.user._id }))._id : req.body.faculty,
       department,
       semester,
       dueDate,
@@ -115,7 +115,7 @@ exports.getAssignments = async (req, res) => {
         query.status = { $in: ['PUBLISHED', 'CLOSED'] };
       }
     } else if (req.user.role === 'FACULTY') {
-      const faculty = await Faculty.findOne({ user: req.user._id });
+      const faculty = await Faculty.findOne({ userId: req.user._id });
       if (faculty) {
         query.faculty = faculty._id;
       }
@@ -134,7 +134,7 @@ exports.getAssignments = async (req, res) => {
 
     // Get submission status for students
     if (req.user.role === 'STUDENT') {
-      const student = await Student.findOne({ user: req.user._id });
+      const student = await Student.findOne({ userId: req.user._id });
       if (student) {
         const assignmentIds = assignments.map(a => a._id);
         const submissions = await AssignmentSubmission.find({
@@ -189,7 +189,7 @@ exports.getAssignmentById = async (req, res) => {
 
     // Check access
     if (req.user.role === 'STUDENT') {
-      const student = await Student.findOne({ user: req.user._id });
+      const student = await Student.findOne({ userId: req.user._id });
       if (student && assignment.visibility === 'SPECIFIC_STUDENTS') {
         const hasAccess = assignment.targetStudents.some(s => s._id.toString() === student._id.toString());
         if (!hasAccess) {
@@ -241,7 +241,7 @@ exports.updateAssignment = async (req, res) => {
 
     // Check ownership for faculty
     if (req.user.role === 'FACULTY') {
-      const faculty = await Faculty.findOne({ user: req.user._id });
+      const faculty = await Faculty.findOne({ userId: req.user._id });
       if (assignment.faculty.toString() !== faculty._id.toString()) {
         return res.status(403).json({
           success: false,
@@ -287,7 +287,7 @@ exports.deleteAssignment = async (req, res) => {
 
     // Check ownership for faculty
     if (req.user.role === 'FACULTY') {
-      const faculty = await Faculty.findOne({ user: req.user._id });
+      const faculty = await Faculty.findOne({ userId: req.user._id });
       if (assignment.faculty.toString() !== faculty._id.toString()) {
         return res.status(403).json({
           success: false,
@@ -373,7 +373,7 @@ exports.submitAssignment = async (req, res) => {
       });
     }
 
-    const student = await Student.findOne({ user: req.user._id });
+    const student = await Student.findOne({ userId: req.user._id });
     if (!student) {
       return res.status(404).json({
         success: false,
@@ -470,7 +470,7 @@ exports.getAssignmentSubmissions = async (req, res) => {
 
     // Check access for faculty
     if (req.user.role === 'FACULTY') {
-      const faculty = await Faculty.findOne({ user: req.user._id });
+      const faculty = await Faculty.findOne({ userId: req.user._id });
       if (assignment.faculty.toString() !== faculty._id.toString()) {
         return res.status(403).json({
           success: false,
@@ -535,7 +535,7 @@ exports.gradeSubmission = async (req, res) => {
 
     // Check access for faculty
     if (req.user.role === 'FACULTY') {
-      const faculty = await Faculty.findOne({ user: req.user._id });
+      const faculty = await Faculty.findOne({ userId: req.user._id });
       if (submission.assignment.faculty.toString() !== faculty._id.toString()) {
         return res.status(403).json({
           success: false,
@@ -585,7 +585,7 @@ exports.gradeSubmission = async (req, res) => {
  */
 exports.getMySubmissions = async (req, res) => {
   try {
-    const student = await Student.findOne({ user: req.user._id });
+    const student = await Student.findOne({ userId: req.user._id });
 
     if (!student) {
       return res.status(404).json({
@@ -626,7 +626,7 @@ exports.getMySubmissions = async (req, res) => {
  */
 exports.getUpcomingDeadlines = async (req, res) => {
   try {
-    const student = await Student.findOne({ user: req.user._id });
+    const student = await Student.findOne({ userId: req.user._id });
     if (!student) {
       return res.status(404).json({ success: false, error: 'Student profile not found' });
     }
