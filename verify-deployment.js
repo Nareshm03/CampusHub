@@ -2,8 +2,8 @@
 
 const https = require('https');
 
-const BACKEND_URL = process.env.BACKEND_URL || 'https://campushub-backend.onrender.com';
-const FRONTEND_URL = process.env.FRONTEND_URL || 'https://campushub-xyz.vercel.app';
+const BACKEND_URL = process.env.BACKEND_URL || 'https://campushub-4puo.onrender.com';
+const FRONTEND_URL = process.env.FRONTEND_URL || 'https://frontend-wine-two-10.vercel.app';
 
 console.log('🚀 CampusHub Deployment Verification\n');
 

@@ -5,7 +5,7 @@ const User = require('../models/User');
 const { sendEmail } = require('../utils/sendEmail');
 const { paymentSuccessTemplate, feeCreatedTemplate, paymentReminderTemplate } = require('../utils/feeEmailTemplates');
 
-const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
+const stripe = process.env.STRIPE_SECRET_KEY ? Stripe(process.env.STRIPE_SECRET_KEY) : null;
 
 // Currency used throughout the application
 const CURRENCY = process.env.FEE_CURRENCY || 'inr';
@@ -187,6 +187,16 @@ const getFeeSummary = async (req, res, next) => {
 // @access  Private
 const createPaymentIntent = async (req, res, next) => {
   try {
+    if (!stripe || process.env.ENABLE_MOCK_PAYMENTS === 'true') {
+      return res.status(200).json({
+        success: true,
+        mock: true,
+        message: 'Mock payment mode enabled',
+        clientSecret: 'mock_client_secret',
+        paymentIntentId: 'mock_pi_' + Date.now()
+      });
+    }
+
     const fee = await Fee.findById(req.params.feeId).populate({
       path: 'student',
       populate: { path: 'userId', select: 'name email' }
@@ -233,6 +243,10 @@ const createPaymentIntent = async (req, res, next) => {
 // @route   POST /api/fees/webhook
 // @access  Public (Stripe-signed)
 const stripeWebhook = async (req, res) => {
+  if (!stripe || process.env.ENABLE_MOCK_PAYMENTS === 'true') {
+    return res.json({ received: true, mock: true });
+  }
+
   const sig = req.headers['stripe-signature'];
   let event;
 
