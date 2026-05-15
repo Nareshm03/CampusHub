@@ -293,6 +293,13 @@ export default function FacultyDashboard() {
         isOpen={changePasswordOpen}
         onClose={() => setChangePasswordOpen(false)}
       />
+
+      {/* Footer Tagline */}
+      <div className="mt-12 pb-6 text-center">
+        <p className="text-sm text-gray-500 dark:text-gray-400">
+          Built by <span className="font-semibold text-gray-700 dark:text-gray-300">Naresh Murthy</span>
+        </p>
+      </div>
     </ProtectedRoute>
   );
 }
