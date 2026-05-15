@@ -408,6 +408,18 @@ const getGradePoint = (marks) => {
 // @access  Private
 const getMarksByStudent = async (req, res, next) => {
   try {
+    // Check if parent is accessing their linked child's data
+    if (req.user.role === 'PARENT') {
+      const Parent = require('../models/Parent');
+      const parent = await Parent.findOne({ userId: req.user.id });
+      if (!parent || parent.linkedStudent?.toString() !== req.params.studentId) {
+        return res.status(403).json({
+          success: false,
+          error: 'Access denied. You can only view your linked child\'s marks.'
+        });
+      }
+    }
+    
     const student = await Student.findById(req.params.studentId);
     
     if (!student) {

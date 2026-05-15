@@ -40,24 +40,200 @@ export default function StudentAttendancePage() {
   const [showRecoveryPlan, setShowRecoveryPlan] = useState(false);
 
   useEffect(() => {
-    fetchStudentAndSummary();
-  }, []);
+    // Check authentication before fetching
+    if (typeof window !== 'undefined') {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        console.warn('No authentication token found');
+        setLoading(false);
+        return;
+      }
+    }
+    if (user) {
+      fetchStudentAndSummary();
+    }
+  }, [user]);
 
   const fetchStudentAndSummary = async () => {
     try {
       setLoading(true);
-      const studentRes = await api.get('/students/me');
-      const studentId = studentRes.data.data._id;
-      setStudentData(studentRes.data.data);
+      
+      // Check authentication
+      if (typeof window !== 'undefined') {
+        const token = localStorage.getItem('token');
+        if (!token) {
+          console.warn('No authentication token found');
+          return;
+        }
+      }
+      
+      let studentId;
+      let studentInfo;
+      
+      // Handle different user roles
+      if (user?.role === 'PARENT') {
+        // For parents, try sessionStorage first, then fetch if needed
+        let dashboard;
+        const storedDashboard = sessionStorage.getItem('parentDashboard');
+        
+        if (storedDashboard) {
+          dashboard = JSON.parse(storedDashboard);
+          console.log('Using stored dashboard:', dashboard);
+        } else {
+          // Fetch parent dashboard if not in sessionStorage
+          const parentRes = await api.get('/parent/dashboard').catch(err => {
+            if (err.response?.status === 403) {
+              console.error('Permission denied: You do not have access to view this data');
+              setSummary([]);
+              setAttendanceRecords([]);
+              setStudentData(null);
+              return null;
+            }
+            console.error('Failed to fetch parent dashboard:', err.response?.status, err.message);
+            throw err;
+          });
+          
+          if (!parentRes) return;
+          
+          if (!parentRes?.data?.linked || !parentRes?.data?.data) {
+            console.warn('Parent has no linked student');
+            return;
+          }
+          
+          dashboard = parentRes.data.data;
+          console.log('Fetched dashboard:', dashboard);
+          sessionStorage.setItem('parentDashboard', JSON.stringify(dashboard));
+        }
+        
+        // The student object from parent dashboard doesn't have _id directly
+        // We need to fetch the full student profile to get the _id
+        const studentProfile = await api.get('/parent/child').catch(err => {
+          if (err.response?.status === 403) {
+            console.error('Permission denied: You do not have access to view student profile');
+            setSummary([]);
+            setAttendanceRecords([]);
+            setStudentData(null);
+            return null;
+          }
+          console.error('Failed to fetch student profile:', err.response?.status, err.message);
+          throw err;
+        });
+        
+        if (!studentProfile) return;
+        
+        if (!studentProfile?.data?.data) {
+          console.warn('Failed to get student profile');
+          return;
+        }
+        
+        studentId = studentProfile.data.data._id;
+        studentInfo = {
+          _id: studentProfile.data.data._id,
+          name: studentProfile.data.data.userId?.name || dashboard.student?.name,
+          usn: studentProfile.data.data.usn || dashboard.student?.usn,
+          semester: studentProfile.data.data.semester || dashboard.student?.semester,
+          department: studentProfile.data.data.department || dashboard.student?.department
+        };
+        
+        console.log('Student ID:', studentId);
+        console.log('Student Info:', studentInfo);
+        
+        if (!studentId) {
+          console.warn('Parent has no linked student information available');
+          return;
+        }
+        
+        setStudentData(studentInfo);
+        
+        // For parents, use the parent-specific attendance endpoint
+        try {
+          const attendanceRes = await api.get('/parent/child/attendance');
+          console.log('Parent attendance response:', attendanceRes.data);
+          
+          if (attendanceRes.data?.data) {
+            setSummary(attendanceRes.data.data.summary || []);
+          }
+          
+          // Fetch detailed attendance records
+          const detailedRes = await api.get('/parent/child/attendance/detailed');
+          console.log('Parent detailed attendance response:', detailedRes.data);
+          
+          if (detailedRes.data?.data?.records) {
+            setAttendanceRecords(detailedRes.data.data.records || []);
+          }
+        } catch (err) {
+          if (err.response?.status === 403) {
+            console.error('Permission denied: You do not have access to view attendance data');
+          } else if (err.response?.status === 404) {
+            console.warn('No attendance data available yet');
+          } else {
+            console.error('Failed to fetch attendance:', err.response?.status, err.message);
+          }
+          setSummary([]);
+          setAttendanceRecords([]);
+        }
+        
+        return; // Exit early for parents
+      } else {
+        // For students, fetch their own profile
+        const studentRes = await api.get('/students/me').catch(err => {
+          if (err.response?.status === 404) {
+            console.warn('Student profile endpoint returned 404 - no profile created yet');
+            return { data: { data: null } };
+          }
+          if (err.response?.status === 403) {
+            console.error('Permission denied: You do not have access to view your profile');
+            return { data: { data: null } };
+          }
+          console.error('Failed to fetch student data:', err.response?.status, err.message);
+          throw err;
+        });
+        
+        if (!studentRes?.data?.data) {
+          console.warn('Student profile not found');
+          return;
+        }
+        
+        setStudentData(studentRes.data.data);
+      }
 
-      const summaryRes = await api.get(`/attendance/summary/${studentId}`);
-      setSummary(summaryRes.data.data || []);
+      // Fetch attendance summary (for students only) - use new endpoint without studentId
+      const summaryRes = await api.get('/attendance/my-summary').catch(err => {
+        if (err.response?.status === 404) {
+          console.warn('Attendance summary endpoint returned 404 - no data available yet');
+          return { data: { data: [] } };
+        }
+        if (err.response?.status === 403) {
+          console.error('Permission denied: You do not have access to view attendance summary');
+          return { data: { data: [] } };
+        }
+        console.error('Failed to fetch attendance summary:', err.response?.status, err.message);
+        throw err;
+      });
+      console.log('Attendance summary response:', summaryRes.data);
+      setSummary(summaryRes.data?.data || []);
 
-      // Fetch detailed attendance records
-      const recordsRes = await api.get(`/attendance/student/${studentId}`);
-      setAttendanceRecords(recordsRes.data.data || []);
+      // Fetch detailed attendance records (for students only) - use new endpoint without studentId
+      const recordsRes = await api.get('/attendance/my-records').catch(err => {
+        if (err.response?.status === 404) {
+          console.warn('Attendance records endpoint returned 404 - no data available yet');
+          return { data: { data: [] } };
+        }
+        if (err.response?.status === 403) {
+          console.error('Permission denied: You do not have access to view attendance records');
+          return { data: { data: [] } };
+        }
+        console.error('Failed to fetch attendance records:', err.response?.status, err.message);
+        throw err;
+      });
+      console.log('Attendance records response:', recordsRes.data);
+      setAttendanceRecords(recordsRes.data?.data || []);
     } catch (error) {
-      console.error('Failed to fetch attendance:', error);
+      if (error.response?.status === 403) {
+        console.error('Permission denied: You do not have sufficient permissions to access this data');
+      } else if (error.response?.status !== 404 && error.response?.status !== 401) {
+        console.error('Failed to fetch attendance:', error.message);
+      }
       setSummary([]);
       setAttendanceRecords([]);
       setStudentData(null);
@@ -215,6 +391,40 @@ export default function StudentAttendancePage() {
 
   if (loading) return <PageLoader message="Loading attendance data..." />;
 
+  // Check if there's no attendance data
+  if (!loading && summary.length === 0 && attendanceRecords.length === 0) {
+    return (
+      <ProtectedRoute allowedRoles={['STUDENT', 'PARENT']}>
+        <div className="container py-8">
+          <div className="flex items-center gap-3 mb-6">
+            <CalendarIcon className="w-8 h-8 text-primary-600" />
+            <div>
+              <h1 className="text-3xl font-bold">
+                {user?.role === 'PARENT' && studentData ? `${studentData.name}'s Attendance` : 'My Attendance'}
+              </h1>
+              <p className="text-gray-600 dark:text-gray-400 mt-1">
+                {user?.role === 'PARENT' ? 'Track your child\'s attendance and maintain 85% threshold' : 'Track your attendance and maintain 85% threshold'}
+              </p>
+            </div>
+          </div>
+          
+          <Card className="p-12 text-center">
+            <CalendarIcon className="w-24 h-24 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">No Attendance Data Available</h2>
+            <p className="text-gray-600 dark:text-gray-400 mb-4">
+              {user?.role === 'PARENT' 
+                ? 'Your child\'s attendance records haven\'t been marked yet. Please check back later or contact the faculty.'
+                : 'Your attendance records haven\'t been marked yet. Please check back later or contact your faculty.'}
+            </p>
+            <p className="text-sm text-gray-500 dark:text-gray-500">
+              Attendance data will appear here once faculty members start marking attendance for classes.
+            </p>
+          </Card>
+        </div>
+      </ProtectedRoute>
+    );
+  }
+
   const THRESHOLD = 85;
   const days = getDaysInMonth(currentMonth);
   const monthName = currentMonth.toLocaleString('default', { month: 'long', year: 'numeric' });
@@ -223,13 +433,17 @@ export default function StudentAttendancePage() {
   const safeLeaves = calculateSafeLeaves(overall.present, overall.total, THRESHOLD);
 
   return (
-    <ProtectedRoute allowedRoles={['STUDENT']}>
+    <ProtectedRoute allowedRoles={['STUDENT', 'PARENT']}>
       <div className="container py-8">
         <div className="flex items-center gap-3 mb-6">
           <CalendarIcon className="w-8 h-8 text-primary-600" />
           <div>
-            <h1 className="text-3xl font-bold">My Attendance</h1>
-            <p className="text-gray-600 dark:text-gray-400 mt-1">Track your attendance and maintain 85% threshold</p>
+            <h1 className="text-3xl font-bold">
+              {user?.role === 'PARENT' && studentData ? `${studentData.name}'s Attendance` : 'My Attendance'}
+            </h1>
+            <p className="text-gray-600 dark:text-gray-400 mt-1">
+              {user?.role === 'PARENT' ? 'Track your child\'s attendance and maintain 85% threshold' : 'Track your attendance and maintain 85% threshold'}
+            </p>
           </div>
         </div>
 

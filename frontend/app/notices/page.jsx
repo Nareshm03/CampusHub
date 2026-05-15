@@ -19,7 +19,14 @@ export default function Notices() {
 
   const fetchNotices = async () => {
     try {
-      const endpoint = user?.role === 'STUDENT' ? '/notices/my' : '/notices';
+      let endpoint = '/notices';
+      if (user?.role === 'STUDENT') {
+        endpoint = '/notices/my';
+      } else if (user?.role === 'FACULTY') {
+        endpoint = '/notices/faculty';
+      } else if (user?.role === 'PARENT') {
+        endpoint = '/parent/notices';
+      }
       const response = await api.get(endpoint);
       setNotices(response.data.data || []);
     } catch (error) {

@@ -10,6 +10,7 @@ import {
   CalendarDaysIcon,
   ChartBarIcon,
   UserIcon,
+  KeyIcon,
 } from '@heroicons/react/24/outline';
 import ProtectedRoute from '../../../components/ProtectedRoute';
 import Card from '../../../components/ui/Card';
@@ -17,6 +18,7 @@ import Badge from '../../../components/ui/Badge';
 import { ProgressRing, BarChart } from '../../../components/Charts';
 import WeeklyTimetable from '../../../components/WeeklyTimetable';
 import { ClockIcon } from '@heroicons/react/24/outline';
+import ChangePasswordModal from '../../../components/ui/ChangePasswordModal';
 
 const UpcomingDeadlines = ({ deadlines, loading }) => {
   const getDaysLeft = (dueDate) => {
@@ -143,6 +145,8 @@ export default function StudentDashboard() {
   const [upcomingDeadlines, setUpcomingDeadlines] = useState([]);
   const [deadlinesLoading, setDeadlinesLoading] = useState(true);
   const [cgpa, setCgpa] = useState('--');
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [profileNotFound, setProfileNotFound] = useState(false);
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -151,14 +155,29 @@ export default function StudentDashboard() {
     return 'Good evening';
   };
 
-  useEffect(() => { fetchDashboardData(); fetchDeadlines(); fetchCGPA(); }, []);
+  useEffect(() => {
+    // Check if user is authenticated before fetching data
+    if (typeof window !== 'undefined') {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        console.warn('No authentication token found');
+        return;
+      }
+    }
+    fetchDashboardData();
+    fetchDeadlines();
+    fetchCGPA();
+  }, []);
 
   const fetchCGPA = async () => {
     try {
       const res = await api.get('/grades/calculate/me');
       const val = res.data?.data?.cgpa;
       if (val != null) setCgpa(val.toFixed(2));
-    } catch {
+    } catch (error) {
+      if (error.response?.status !== 404 && error.response?.status !== 401) {
+        console.error('Error fetching CGPA:', error.message);
+      }
       // CGPA stays '--' if not available
     }
   };
@@ -167,7 +186,10 @@ export default function StudentDashboard() {
     try {
       const res = await api.get('/assignments/upcoming-deadlines');
       setUpcomingDeadlines(res.data?.data || []);
-    } catch {
+    } catch (error) {
+      if (error.response?.status !== 404) {
+        console.error('Error fetching deadlines:', error.message);
+      }
       setUpcomingDeadlines([]);
     } finally {
       setDeadlinesLoading(false);
@@ -178,7 +200,12 @@ export default function StudentDashboard() {
     try {
       const studentRes = await api.get('/students/me');
       const student = studentRes.data?.data;
-      if (!student?._id) return;
+      if (!student?._id) {
+        console.warn('Student profile not found');
+        setProfileNotFound(true);
+        return;
+      }
+      setProfileNotFound(false);
       if (student.userId?.name) setStudentName(student.userId.name.split(' ')[0]);
 
       const studentId = student._id;
@@ -186,11 +213,26 @@ export default function StudentDashboard() {
       const enrolledSubjects = student.subjects || [];
 
       const [attendanceRes, leavesRes, noticesRes, activityAttRes, marksRes] = await Promise.allSettled([
-        api.get(`/attendance/summary/${studentId}`),
-        api.get('/leaves/my'),
-        api.get('/notices/my'),
-        api.get(`/attendance/student/${studentId}`),
-        api.get('/marks/my'),
+        api.get(`/attendance/summary/${studentId}`).catch(err => {
+          if (err.response?.status === 404) console.warn('Attendance summary endpoint not found');
+          throw err;
+        }),
+        api.get('/leaves/my').catch(err => {
+          if (err.response?.status === 404) console.warn('Leaves endpoint not found');
+          throw err;
+        }),
+        api.get('/notices/my').catch(err => {
+          if (err.response?.status === 404) console.warn('Notices endpoint not found');
+          throw err;
+        }),
+        api.get(`/attendance/student/${studentId}`).catch(err => {
+          if (err.response?.status === 404) console.warn('Student attendance endpoint not found');
+          throw err;
+        }),
+        api.get('/marks/my').catch(err => {
+          if (err.response?.status === 404) console.warn('Marks endpoint not found');
+          throw err;
+        }),
       ]);
 
       if (attendanceRes.status === 'fulfilled') {
@@ -258,7 +300,12 @@ export default function StudentDashboard() {
         setMarksChartData(chartData.length > 0 ? chartData : []);
       }
     } catch (error) {
-      console.error('Failed to fetch dashboard data:', error);
+      if (error.response?.status === 404) {
+        console.warn('Student profile not found. Please contact administrator to create your profile.');
+        setProfileNotFound(true);
+      } else if (error.response?.status !== 401) {
+        console.error('Failed to fetch dashboard data:', error.message);
+      }
     }
   };
 
@@ -294,14 +341,57 @@ export default function StudentDashboard() {
 
   return (
     <ProtectedRoute allowedRoles={['STUDENT']}>
+      {profileNotFound ? (
+        <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+          <Card className="p-8 text-center">
+            <div className="mb-6">
+              <UserIcon className="w-20 h-20 mx-auto text-gray-400" />
+            </div>
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-3">
+              Student Profile Not Found
+            </h2>
+            <p className="text-gray-600 dark:text-gray-400 mb-6 leading-relaxed">
+              Your student profile has not been created yet. Please contact your administrator or visit the admin office to set up your profile.
+            </p>
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-6">
+              <p className="text-sm text-blue-900 dark:text-blue-200">
+                <strong>What to do:</strong>
+              </p>
+              <ul className="text-sm text-blue-800 dark:text-blue-300 mt-2 space-y-1 text-left">
+                <li>• Contact your department administrator</li>
+                <li>• Provide your user credentials</li>
+                <li>• Wait for profile creation</li>
+                <li>• Refresh this page after confirmation</li>
+              </ul>
+            </div>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              Refresh Page
+            </button>
+          </Card>
+        </div>
+      ) : (
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 
         {/* Header */}
         <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">{getGreeting()}, {studentName}! 👋</h1>
-          <p className="text-gray-600 dark:text-gray-400 max-w-2xl leading-relaxed">
-            Welcome back to your CampusHub dashboard. Let's make today count! Here is a comprehensive overview of your current academic progress, upcoming schedules, and recent activities.
-          </p>
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-2">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">{getGreeting()}, {studentName}! 👋</h1>
+              <p className="text-gray-600 dark:text-gray-400 max-w-2xl leading-relaxed">
+                Welcome back to your CampusHub dashboard. Let's make today count! Here is a comprehensive overview of your current academic progress, upcoming schedules, and recent activities.
+              </p>
+            </div>
+            <button
+              onClick={() => setChangePasswordOpen(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 text-sm font-medium transition-colors whitespace-nowrap"
+            >
+              <KeyIcon className="w-4 h-4" />
+              Change Password
+            </button>
+          </div>
         </motion.div>
 
         {/* Stats */}
@@ -384,6 +474,12 @@ export default function StudentDashboard() {
         )}
 
       </div>
+      )}
+
+      <ChangePasswordModal
+        isOpen={changePasswordOpen}
+        onClose={() => setChangePasswordOpen(false)}
+      />
     </ProtectedRoute>
   );
 }

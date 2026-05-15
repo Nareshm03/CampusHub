@@ -249,11 +249,58 @@ const getFacultyInMyDepartment = async (req, res, next) => {
   }
 };
 
+// @desc    Admin change any user's password (no current password required)
+// @route   PUT /api/users/:id/change-password
+// @access  Private/Admin
+const adminChangeUserPassword = async (req, res, next) => {
+  try {
+    const { newPassword } = req.body;
+
+    // Enhanced password validation
+    if (!newPassword || newPassword.length < 8) {
+      return res.status(400).json({ success: false, error: 'New password must be at least 8 characters' });
+    }
+
+    // Check for lowercase and numeric
+    if (!/[a-z]/.test(newPassword)) {
+      return res.status(400).json({ success: false, error: 'Password must contain at least one lowercase letter' });
+    }
+    if (!/[0-9]/.test(newPassword)) {
+      return res.status(400).json({ success: false, error: 'Password must contain at least one number' });
+    }
+
+    const user = await User.findById(req.params.id).select('+password');
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    user.password = newPassword;
+    await user.save();
+
+    // Audit log the admin password change
+    const { logSecurityEvent } = require('../middleware/auditLogger');
+    await logSecurityEvent('PASSWORD_CHANGED_BY_ADMIN', user._id, {
+      adminId: req.user.id,
+      adminName: req.user.name,
+      targetUserName: user.name,
+      targetUserRole: user.role,
+      ip: req.ip,
+      userAgent: req.get('User-Agent'),
+      changedBy: 'admin'
+    });
+
+    res.status(200).json({ success: true, data: `Password for ${user.name} changed successfully` });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getAllUsers,
   getFacultyUsers,
   getFacultyInMyDepartment,
   deleteUser,
   updateUser,
-  removeUserAccess
+  removeUserAccess,
+  adminChangeUserPassword
 };

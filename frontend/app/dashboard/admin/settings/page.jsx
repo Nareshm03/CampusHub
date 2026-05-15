@@ -7,7 +7,8 @@ import {
   CheckIcon,
   Cog6ToothIcon,
   ClockIcon,
-  ChartBarIcon
+  ChartBarIcon,
+  KeyIcon
 } from '@heroicons/react/24/outline';
 import api from '../../../../lib/axios';
 import Button from '../../../../components/ui/Button';
@@ -15,6 +16,8 @@ import Card from '../../../../components/ui/Card';
 import Input from '../../../../components/ui/Input';
 import { toast } from 'sonner';
 import ProtectedRoute from '../../../../components/ProtectedRoute';
+import ChangePasswordModal from '../../../../components/ui/ChangePasswordModal';
+
 
 export default function SystemSettings() {
   const [settings, setSettings] = useState({
@@ -30,6 +33,7 @@ export default function SystemSettings() {
     examEndDate: ''
   });
   const [loading, setLoading] = useState(false);
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
 
   useEffect(() => {
     fetchSettings();
@@ -290,8 +294,37 @@ export default function SystemSettings() {
               </div>
             </div>
           </Card>
+
+          {/* Account Security — Change Password */}
+          <Card className="overflow-hidden border-l-4 border-l-purple-600">
+            <div className="p-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 bg-purple-100 dark:bg-purple-900/30 rounded-lg border border-purple-200 dark:border-purple-800">
+                    <KeyIcon className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-gray-900 dark:text-white">Account Security</h3>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">Update your admin account password</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setChangePasswordOpen(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-sm font-semibold rounded-lg shadow hover:shadow-md transition-all duration-200"
+                >
+                  <KeyIcon className="w-4 h-4" />
+                  Change Password
+                </button>
+              </div>
+            </div>
+          </Card>
         </div>
       </div>
+
+      <ChangePasswordModal
+        isOpen={changePasswordOpen}
+        onClose={() => setChangePasswordOpen(false)}
+      />
     </ProtectedRoute>
   );
-}
+}

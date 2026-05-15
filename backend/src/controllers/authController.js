@@ -219,6 +219,58 @@ const verifyEmail = async (req, res, next) => {
   }
 };
 
+// @desc    Change own password (requires current password)
+// @route   PUT /api/auth/changepassword
+// @access  Private
+const changePassword = async (req, res, next) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ success: false, error: 'Please provide current and new password' });
+    }
+
+    // Enhanced password validation
+    if (newPassword.length < 8) {
+      return res.status(400).json({ success: false, error: 'New password must be at least 8 characters' });
+    }
+
+    // Check for lowercase and numeric
+    if (!/[a-z]/.test(newPassword)) {
+      return res.status(400).json({ success: false, error: 'Password must contain at least one lowercase letter' });
+    }
+    if (!/[0-9]/.test(newPassword)) {
+      return res.status(400).json({ success: false, error: 'Password must contain at least one number' });
+    }
+
+    const user = await User.findById(req.user.id).select('+password');
+    const isMatch = await user.matchPassword(currentPassword);
+
+    if (!isMatch) {
+      await logSecurityEvent('PASSWORD_CHANGE_FAILED', user._id, { 
+        reason: 'Incorrect current password',
+        ip: req.ip,
+        userAgent: req.get('User-Agent')
+      });
+      return res.status(401).json({ success: false, error: 'Current password is incorrect' });
+    }
+
+    user.password = newPassword;
+    await user.save();
+
+    await logSecurityEvent('PASSWORD_CHANGED', user._id, { 
+      ip: req.ip,
+      userAgent: req.get('User-Agent'),
+      role: user.role,
+      changedBy: 'self'
+    });
+
+    res.status(200).json({ success: true, data: 'Password changed successfully' });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // @desc    Logout user
 // @route   GET /api/auth/logout
 // @access  Private
@@ -268,5 +320,6 @@ module.exports = {
   forgotPassword,
   resetPassword,
   verifyEmail,
+  changePassword,
   logout
 };

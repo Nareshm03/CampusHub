@@ -4,7 +4,11 @@ const Attendance = require('../models/Attendance');
 const Marks = require('../models/Marks');
 const Fee = require('../models/Fee');
 const Notice = require('../models/Notice');
+const Assignment = require('../models/Assignment');
+const AssignmentSubmission = require('../models/AssignmentSubmission');
+const ExamSchedule = require('../models/ExamSchedule');
 const mongoose = require('mongoose');
+const PDFDocument = require('pdfkit');
 
 /**
  * Resolve the linked Student document for the authenticated parent.
@@ -70,8 +74,11 @@ const getChildAttendance = async (req, res, next) => {
       { $sort: { percentage: 1 } }
     ]);
 
-    const overall = summary.length > 0
-      ? Math.round(summary.reduce((s, r) => s + r.percentage, 0) / summary.length)
+    // Calculate overall attendance using weighted method (total present / total classes)
+    const totalPresent = summary.reduce((sum, r) => sum + r.presentClasses, 0);
+    const totalClasses = summary.reduce((sum, r) => sum + r.totalClasses, 0);
+    const overall = totalClasses > 0
+      ? Math.round((totalPresent / totalClasses) * 100)
       : 0;
 
     res.status(200).json({ success: true, data: { summary, overall } });
@@ -229,8 +236,11 @@ const getDashboard = async (req, res, next) => {
       Notice.find({ targetType: 'COLLEGE' }).sort({ createdAt: -1 }).limit(5).populate('createdBy', 'name')
     ]);
 
-    const overallAttendance = attendanceRaw.length > 0
-      ? Math.round(attendanceRaw.reduce((s, r) => s + r.percentage, 0) / attendanceRaw.length)
+    // Calculate overall attendance using weighted method (total present / total classes)
+    const totalPresent = attendanceRaw.reduce((sum, r) => sum + r.presentClasses, 0);
+    const totalClasses = attendanceRaw.reduce((sum, r) => sum + r.totalClasses, 0);
+    const overallAttendance = totalClasses > 0
+      ? Math.round((totalPresent / totalClasses) * 100)
       : null;
 
     const atRiskSubjects = attendanceRaw.filter(r => r.percentage < 75);
@@ -281,6 +291,294 @@ const getDashboard = async (req, res, next) => {
   }
 };
 
+// @desc    Get detailed attendance with date range filter
+// @route   GET /api/parent/child/attendance/detailed
+// @access  Private/Parent
+const getDetailedAttendance = async (req, res, next) => {
+  try {
+    const student = await resolveLinkedStudent(req.user.id);
+    if (!student) return res.status(404).json({ success: false, error: 'No linked student found' });
+
+    const { startDate, endDate, subject } = req.query;
+    const filter = { student: student._id };
+    if (startDate || endDate) {
+      filter.date = {};
+      if (startDate) filter.date.$gte = new Date(startDate);
+      if (endDate) filter.date.$lte = new Date(endDate);
+    }
+    if (subject) filter.subject = subject;
+
+    const records = await Attendance.find(filter)
+      .populate('subject', 'name subjectCode')
+      .sort({ date: -1 })
+      .limit(500);
+
+    const stats = {
+      total: records.length,
+      present: records.filter(r => r.status === 'PRESENT').length,
+      absent: records.filter(r => r.status === 'ABSENT').length,
+      late: records.filter(r => r.status === 'LATE').length,
+      percentage: records.length > 0 ? Math.round((records.filter(r => r.status === 'PRESENT').length / records.length) * 100) : 0
+    };
+
+    res.status(200).json({ success: true, data: { records, stats } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get CGPA and semester-wise performance
+// @route   GET /api/parent/child/cgpa
+// @access  Private/Parent
+const getChildCGPA = async (req, res, next) => {
+  try {
+    const student = await resolveLinkedStudent(req.user.id);
+    if (!student) return res.status(404).json({ success: false, error: 'No linked student found' });
+
+    const marks = await Marks.find({ student: student._id, examType: 'SEMESTER' })
+      .populate('subject', 'name subjectCode semester credits')
+      .sort({ createdAt: -1 });
+
+    const semesterMap = {};
+    marks.forEach(mark => {
+      const sem = mark.subject?.semester || mark.semester || 1;
+      if (!semesterMap[sem]) semesterMap[sem] = [];
+      semesterMap[sem].push(mark);
+    });
+
+    const semesterResults = Object.keys(semesterMap).map(sem => {
+      const semMarks = semesterMap[sem];
+      const totalCredits = semMarks.reduce((sum, m) => sum + (m.subject?.credits || 3), 0);
+      const weightedGrade = semMarks.reduce((sum, m) => {
+        const percentage = (m.marks / m.totalMarks) * 100;
+        const gradePoint = percentage >= 90 ? 10 : percentage >= 80 ? 9 : percentage >= 70 ? 8 : percentage >= 60 ? 7 : percentage >= 50 ? 6 : percentage >= 40 ? 5 : 0;
+        return sum + (gradePoint * (m.subject?.credits || 3));
+      }, 0);
+      const sgpa = totalCredits > 0 ? (weightedGrade / totalCredits).toFixed(2) : 0;
+      return { semester: sem, sgpa: parseFloat(sgpa), subjects: semMarks.length };
+    });
+
+    const cgpa = semesterResults.length > 0
+      ? (semesterResults.reduce((sum, s) => sum + parseFloat(s.sgpa), 0) / semesterResults.length).toFixed(2)
+      : 0;
+
+    res.status(200).json({ success: true, data: { cgpa: parseFloat(cgpa), semesters: semesterResults } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get assignments and deadlines
+// @route   GET /api/parent/child/assignments
+// @access  Private/Parent
+const getChildAssignments = async (req, res, next) => {
+  try {
+    const student = await resolveLinkedStudent(req.user.id);
+    if (!student) return res.status(404).json({ success: false, error: 'No linked student found' });
+
+    const assignments = await Assignment.find({
+      department: student.department,
+      semester: student.semester,
+      status: { $in: ['PUBLISHED', 'GRADED'] }
+    })
+      .populate('subject', 'name subjectCode')
+      .populate('faculty', 'name')
+      .sort({ dueDate: -1 })
+      .limit(50);
+
+    const submissions = await AssignmentSubmission.find({
+      student: student._id,
+      assignment: { $in: assignments.map(a => a._id) }
+    });
+
+    const submissionMap = {};
+    submissions.forEach(sub => {
+      submissionMap[sub.assignment.toString()] = sub;
+    });
+
+    const result = assignments.map(assignment => ({
+      ...assignment.toObject(),
+      submission: submissionMap[assignment._id.toString()] || null,
+      isOverdue: new Date() > assignment.dueDate && !submissionMap[assignment._id.toString()]
+    }));
+
+    res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get exam schedules
+// @route   GET /api/parent/child/exams
+// @access  Private/Parent
+const getChildExams = async (req, res, next) => {
+  try {
+    const student = await resolveLinkedStudent(req.user.id);
+    if (!student) return res.status(404).json({ success: false, error: 'No linked student found' });
+
+    const exams = await ExamSchedule.find({
+      department: student.department,
+      semester: student.semester,
+      status: { $in: ['PUBLISHED', 'ONGOING', 'COMPLETED'] }
+    })
+      .populate('subjects.subject', 'name subjectCode')
+      .sort({ startDate: -1 })
+      .limit(10);
+
+    res.status(200).json({ success: true, data: exams });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Export attendance report as PDF
+// @route   GET /api/parent/child/attendance/export
+// @access  Private/Parent
+const exportAttendanceReport = async (req, res, next) => {
+  try {
+    const student = await resolveLinkedStudent(req.user.id);
+    if (!student) return res.status(404).json({ success: false, error: 'No linked student found' });
+
+    const { startDate, endDate } = req.query;
+    const filter = { student: student._id };
+    if (startDate || endDate) {
+      filter.date = {};
+      if (startDate) filter.date.$gte = new Date(startDate);
+      if (endDate) filter.date.$lte = new Date(endDate);
+    }
+
+    const records = await Attendance.find(filter)
+      .populate('subject', 'name subjectCode')
+      .sort({ date: -1 });
+
+    const summary = await Attendance.aggregate([
+      { $match: { student: student._id } },
+      {
+        $group: {
+          _id: '$subject',
+          totalClasses: { $sum: 1 },
+          presentClasses: { $sum: { $cond: [{ $eq: ['$status', 'PRESENT'] }, 1, 0] } }
+        }
+      },
+      {
+        $addFields: {
+          percentage: { $round: [{ $multiply: [{ $divide: ['$presentClasses', '$totalClasses'] }, 100] }, 1] }
+        }
+      },
+      { $lookup: { from: 'subjects', localField: '_id', foreignField: '_id', as: 'subject' } },
+      { $unwind: '$subject' }
+    ]);
+
+    const doc = new PDFDocument({ margin: 50 });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=attendance-report-${student.usn}.pdf`);
+    doc.pipe(res);
+
+    doc.fontSize(20).text('Attendance Report', { align: 'center' });
+    doc.moveDown();
+    doc.fontSize(12).text(`Student: ${student.userId?.name || 'N/A'}`);
+    doc.text(`USN: ${student.usn}`);
+    doc.text(`Department: ${student.department?.name || 'N/A'}`);
+    doc.text(`Semester: ${student.semester}`);
+    doc.text(`Report Date: ${new Date().toLocaleDateString()}`);
+    doc.moveDown();
+
+    doc.fontSize(14).text('Subject-wise Summary', { underline: true });
+    doc.moveDown(0.5);
+    summary.forEach(s => {
+      doc.fontSize(10).text(`${s.subject.name}: ${s.presentClasses}/${s.totalClasses} (${s.percentage}%)`);
+    });
+
+    doc.end();
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Export performance report as PDF
+// @route   GET /api/parent/child/performance/export
+// @access  Private/Parent
+const exportPerformanceReport = async (req, res, next) => {
+  try {
+    const student = await resolveLinkedStudent(req.user.id);
+    if (!student) return res.status(404).json({ success: false, error: 'No linked student found' });
+
+    const marks = await Marks.find({ student: student._id })
+      .populate('subject', 'name subjectCode semester')
+      .sort({ createdAt: -1 });
+
+    const doc = new PDFDocument({ margin: 50 });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=performance-report-${student.usn}.pdf`);
+    doc.pipe(res);
+
+    doc.fontSize(20).text('Academic Performance Report', { align: 'center' });
+    doc.moveDown();
+    doc.fontSize(12).text(`Student: ${student.userId?.name || 'N/A'}`);
+    doc.text(`USN: ${student.usn}`);
+    doc.text(`Department: ${student.department?.name || 'N/A'}`);
+    doc.text(`Semester: ${student.semester}`);
+    doc.text(`Report Date: ${new Date().toLocaleDateString()}`);
+    doc.moveDown();
+
+    doc.fontSize(14).text('Marks Summary', { underline: true });
+    doc.moveDown(0.5);
+    marks.forEach(m => {
+      doc.fontSize(10).text(`${m.subject?.name || 'Subject'} - ${m.examType} ${m.examName || ''}: ${m.marks}/${m.totalMarks}`);
+    });
+
+    doc.end();
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get total parents count (Admin only)
+// @route   GET /api/parent/count
+// @access  Private/Admin
+const getParentsCount = async (req, res, next) => {
+  try {
+    const count = await User.countDocuments({ role: 'PARENT' });
+    res.status(200).json({ success: true, data: { count } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get all parents (Admin only)
+// @route   GET /api/parent/all
+// @access  Private/Admin
+const getAllParents = async (req, res, next) => {
+  try {
+    const parents = await User.find({ role: 'PARENT' })
+      .populate('linkedStudentId')
+      .select('-password')
+      .sort({ createdAt: -1 });
+    
+    const result = await Promise.all(parents.map(async (parent) => {
+      if (parent.linkedStudentId) {
+        const student = await Student.findById(parent.linkedStudentId)
+          .populate('userId', 'name')
+          .populate('department', 'name');
+        return {
+          ...parent.toObject(),
+          studentDetails: student ? {
+            name: student.userId?.name,
+            usn: student.usn,
+            department: student.department?.name,
+            semester: student.semester
+          } : null
+        };
+      }
+      return parent.toObject();
+    }));
+
+    res.status(200).json({ success: true, count: result.length, data: result });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getChildProfile,
   getChildAttendance,
@@ -288,5 +586,13 @@ module.exports = {
   getChildFees,
   getParentNotices,
   linkStudent,
-  getDashboard
+  getDashboard,
+  getDetailedAttendance,
+  getChildCGPA,
+  getChildAssignments,
+  getChildExams,
+  exportAttendanceReport,
+  exportPerformanceReport,
+  getParentsCount,
+  getAllParents
 };

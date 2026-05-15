@@ -60,7 +60,7 @@ const Navbar = () => {
         { href: '/exams', label: 'Exams' },
         { href: '/notices', label: 'Notices' },
         { href: '/leaves', label: 'Leaves' },
-        { href: '/tickets', label: 'Support' },
+        { href: '/dashboard/support', label: 'Support' },
         { href: '/alumni-network', label: 'Alumni' },
       ],
       FACULTY: [
@@ -68,7 +68,7 @@ const Navbar = () => {
         { href: '/dashboard/faculty/marks', label: 'Enter Marks' },
         { href: '/notices', label: 'Notices' },
         { href: '/dashboard/faculty/leaves', label: 'Leave Requests' },
-        { href: '/tickets', label: 'Support' },
+        { href: '/dashboard/support', label: 'Support' },
       ],
       ADMIN: [
         { href: '/dashboard/admin/departments', label: 'Departments' },
@@ -81,7 +81,7 @@ const Navbar = () => {
       PARENT: [
         { href: '/fees', label: 'Fees & Payments' },
         { href: '/notices', label: 'Campus Notices' },
-        { href: '/tickets', label: 'Support' }
+        { href: '/dashboard/support', label: 'Support' }
       ]
     };
     return links[user.role] || [];

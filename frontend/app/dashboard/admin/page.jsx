@@ -18,7 +18,8 @@ import {
   UserCircleIcon,
   DocumentChartBarIcon,
   Cog6ToothIcon,
-  PlusCircleIcon
+  PlusCircleIcon,
+  UserPlusIcon
 } from '@heroicons/react/24/outline';
 import { BarChart, PieChart } from '../../../components/Charts';
 
@@ -56,6 +57,7 @@ export default function AdminDashboard() {
   const [stats, setStats] = useState({
     totalStudents: 0,
     totalFaculty: 0,
+    totalParents: 0,
     totalDepartments: 0,
     totalSubjects: 0,
     pendingTickets: 0,
@@ -71,9 +73,10 @@ export default function AdminDashboard() {
 
   const fetchDashboardData = async () => {
     try {
-      const [studentsRes, facultyRes, departmentsRes, subjectsRes, ticketsRes, noticesRes, attendanceRes, marksRes] = await Promise.all([
+      const [studentsRes, facultyRes, parentsRes, departmentsRes, subjectsRes, ticketsRes, noticesRes, attendanceRes, marksRes] = await Promise.all([
         api.get('/students/count').catch(() => ({ data: { data: { count: 0 } } })),
         api.get('/faculty/count').catch(() => ({ data: { data: { count: 0 } } })),
+        api.get('/parent/count').catch(() => ({ data: { data: { count: 0 } } })),
         api.get('/departments').catch(() => ({ data: { data: [] } })),
         api.get('/subjects').catch(() => ({ data: { data: [] } })),
         api.get('/tickets').catch(() => ({ data: { data: [] } })),
@@ -97,6 +100,7 @@ export default function AdminDashboard() {
       setStats({
         totalStudents: studentsRes.data.data?.count ?? 0,
         totalFaculty: facultyRes.data.data?.count ?? 0,
+        totalParents: parentsRes.data.data?.count ?? 0,
         totalDepartments: departmentsRes.data.data?.length || 0,
         totalSubjects: subjectsRes.data.data?.length || 0,
         pendingTickets: ticketsRes.data.data?.filter(t => t.status === 'PENDING')?.length || 0,
@@ -174,6 +178,15 @@ export default function AdminDashboard() {
       href: '/dashboard/admin/faculty',
       color: 'cyan',
       count: stats.totalFaculty
+    },
+    { 
+      icon: UserPlusIcon,
+      title: 'Parents',
+      subtitle: 'Parent accounts',
+      description: 'View and manage parent accounts linked to students',
+      href: '/dashboard/admin/parents',
+      color: 'violet',
+      count: stats.totalParents
     }
   ];
 
@@ -259,8 +272,8 @@ export default function AdminDashboard() {
               <p className="text-2xl font-bold text-green-900 dark:text-green-100 mt-1">{stats.totalFaculty}</p>
             </Card>
             <Card className="p-4 bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 border-purple-200 dark:border-purple-800">
-              <p className="text-sm font-medium text-purple-600 dark:text-purple-400">Departments</p>
-              <p className="text-2xl font-bold text-purple-900 dark:text-purple-100 mt-1">{stats.totalDepartments}</p>
+              <p className="text-sm font-medium text-purple-600 dark:text-purple-400">Total Parents</p>
+              <p className="text-2xl font-bold text-purple-900 dark:text-purple-100 mt-1">{stats.totalParents}</p>
             </Card>
             <Card className="p-4 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 border-amber-200 dark:border-amber-800">
               <p className="text-sm font-medium text-amber-600 dark:text-amber-400">Pending Tickets</p>
@@ -305,7 +318,7 @@ export default function AdminDashboard() {
             <span className="w-1 h-6 bg-blue-600 dark:bg-blue-400 mr-3 rounded-full"></span>
             People
           </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
             {peopleItems.map((item, index) => (
               <motion.div
                 key={item.title}

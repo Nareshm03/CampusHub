@@ -78,7 +78,7 @@ const validateUserRegistration = [
   body('name').trim().isLength({ min: 2, max: 50 }).withMessage('Name must be 2-50 characters'),
   validateEmail(),
   validatePassword(),
-  body('role').isIn(['STUDENT', 'FACULTY', 'ADMIN']).withMessage('Invalid role'),
+  body('role').isIn(['STUDENT', 'FACULTY', 'ADMIN', 'PARENT']).withMessage('Invalid role'),
   handleValidationErrors
 ];
 

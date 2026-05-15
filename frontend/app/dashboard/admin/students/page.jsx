@@ -4,7 +4,8 @@ import ProtectedRoute from '../../../../components/ProtectedRoute';
 import Card from '../../../../components/ui/Card';
 import Button from '../../../../components/ui/Button';
 import Modal from '../../../../components/ui/Modal';
-import { PlusIcon, PencilIcon, TrashIcon } from '@heroicons/react/24/outline';
+import ChangePasswordModal from '../../../../components/ui/ChangePasswordModal';
+import { PlusIcon, PencilIcon, TrashIcon, KeyIcon } from '@heroicons/react/24/outline';
 import { toast } from 'sonner';
 import api from '../../../../lib/axios';
 import { getProfilePhotoUrl } from '../../../../lib/imageUtils';
@@ -32,6 +33,8 @@ export default function AdminStudentsPage() {
     admissionYear: ''
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [selectedUserForPassword, setSelectedUserForPassword] = useState(null);
 
   useEffect(() => {
     fetchStudents();
@@ -185,6 +188,14 @@ export default function AdminStudentsPage() {
     }
   };
 
+  const handleChangePassword = (student) => {
+    setSelectedUserForPassword({
+      userId: student.userId._id,
+      userName: student.userId?.name || 'Student'
+    });
+    setChangePasswordOpen(true);
+  };
+
   const handleRetry = () => {
     fetchStudents();
   };
@@ -336,6 +347,13 @@ export default function AdminStudentsPage() {
                             title="Edit Student"
                           >
                             <PencilIcon className="w-5 h-5" />
+                          </button>
+                          <button
+                            onClick={() => handleChangePassword(student)}
+                            className="p-2 text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-lg transition-colors"
+                            title="Change Password"
+                          >
+                            <KeyIcon className="w-5 h-5" />
                           </button>
                           <button
                             onClick={() => handleDeleteStudent(student)}
@@ -698,6 +716,16 @@ export default function AdminStudentsPage() {
           </form>
         </Modal>
       </div>
+
+      <ChangePasswordModal
+        isOpen={changePasswordOpen}
+        onClose={() => {
+          setChangePasswordOpen(false);
+          setSelectedUserForPassword(null);
+        }}
+        userId={selectedUserForPassword?.userId}
+        userName={selectedUserForPassword?.userName}
+      />
     </ProtectedRoute>
   );
 }

@@ -180,11 +180,35 @@ const getAttendance = async (req, res, next) => {
 };
 
 // @desc    Get attendance summary for student
-// @route   GET /api/attendance/summary/:studentId
+// @route   GET /api/attendance/summary/:studentId OR GET /api/attendance/my-summary
 // @access  Private
 const getAttendanceSummary = async (req, res, next) => {
   try {
-    const { studentId } = req.params;
+    let { studentId } = req.params;
+    
+    // If no studentId param (using /my-summary route) or user is a student, get their student profile ID
+    if (!studentId || req.user.role === 'STUDENT') {
+      const student = await Student.findOne({ userId: req.user.id });
+      if (!student) {
+        return res.status(404).json({
+          success: false,
+          error: 'Student profile not found'
+        });
+      }
+      studentId = student._id.toString();
+    }
+    
+    // Check if parent is accessing their linked child's data
+    if (req.user.role === 'PARENT') {
+      const Parent = require('../models/Parent');
+      const parent = await Parent.findOne({ userId: req.user.id });
+      if (!parent || parent.linkedStudent?.toString() !== studentId) {
+        return res.status(403).json({
+          success: false,
+          error: 'Access denied. You can only view your linked child\'s attendance.'
+        });
+      }
+    }
     
     const summary = await Attendance.aggregate([
       { $match: { student: new mongoose.Types.ObjectId(studentId) } },
@@ -228,12 +252,36 @@ const getAttendanceSummary = async (req, res, next) => {
 };
 
 // @desc    Get attendance trends for student
-// @route   GET /api/attendance/trends/:studentId
+// @route   GET /api/attendance/trends/:studentId OR GET /api/attendance/my-trends
 // @access  Private
 const getAttendanceTrends = async (req, res, next) => {
   try {
-    const { studentId } = req.params;
+    let { studentId } = req.params;
     const { period = 'month' } = req.query; // period can be 'week' or 'month'
+
+    // If no studentId param (using /my-trends route) or user is a student, get their student profile ID
+    if (!studentId || req.user.role === 'STUDENT') {
+      const student = await Student.findOne({ userId: req.user.id });
+      if (!student) {
+        return res.status(404).json({
+          success: false,
+          error: 'Student profile not found'
+        });
+      }
+      studentId = student._id.toString();
+    }
+
+    // Check if parent is accessing their linked child's data
+    if (req.user.role === 'PARENT') {
+      const Parent = require('../models/Parent');
+      const parent = await Parent.findOne({ userId: req.user.id });
+      if (!parent || parent.linkedStudent?.toString() !== studentId) {
+        return res.status(403).json({
+          success: false,
+          error: 'Access denied. You can only view your linked child\'s attendance.'
+        });
+      }
+    }
 
     let groupBy;
     if (period === 'week') {
@@ -273,11 +321,35 @@ const getAttendanceTrends = async (req, res, next) => {
 };
 
 // @desc    Get detailed attendance records for student
-// @route   GET /api/attendance/student/:studentId
+// @route   GET /api/attendance/student/:studentId OR GET /api/attendance/my-records
 // @access  Private
 const getStudentAttendance = async (req, res, next) => {
   try {
-    const { studentId } = req.params;
+    let { studentId } = req.params;
+    
+    // If no studentId param (using /my-records route) or user is a student, get their student profile ID
+    if (!studentId || req.user.role === 'STUDENT') {
+      const student = await Student.findOne({ userId: req.user.id });
+      if (!student) {
+        return res.status(404).json({
+          success: false,
+          error: 'Student profile not found'
+        });
+      }
+      studentId = student._id.toString();
+    }
+    
+    // Check if parent is accessing their linked child's data
+    if (req.user.role === 'PARENT') {
+      const Parent = require('../models/Parent');
+      const parent = await Parent.findOne({ userId: req.user.id });
+      if (!parent || parent.linkedStudent?.toString() !== studentId) {
+        return res.status(403).json({
+          success: false,
+          error: 'Access denied. You can only view your linked child\'s attendance.'
+        });
+      }
+    }
     
     const attendance = await Attendance.find({ student: studentId })
       .populate('subject', 'name code')

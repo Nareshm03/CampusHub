@@ -94,6 +94,20 @@ const rolePermissions = {
     [RESOURCES.PLACEMENT]: [ACTIONS.CREATE, ACTIONS.READ, ACTIONS.UPDATE, ACTIONS.LIST],
     [RESOURCES.ALUMNI]: [ACTIONS.READ, ACTIONS.LIST],
     [RESOURCES.HOMEWORK]: [ACTIONS.READ, ACTIONS.UPDATE, ACTIONS.LIST] // Update for submission
+  },
+  
+  PARENT: {
+    [RESOURCES.STUDENT]: [ACTIONS.READ], // Linked child's profile
+    [RESOURCES.ATTENDANCE]: [ACTIONS.READ, ACTIONS.LIST],
+    [RESOURCES.MARKS]: [ACTIONS.READ, ACTIONS.LIST],
+    [RESOURCES.SUBJECT]: [ACTIONS.READ, ACTIONS.LIST],
+    [RESOURCES.DEPARTMENT]: [ACTIONS.READ],
+    [RESOURCES.NOTICE]: [ACTIONS.READ, ACTIONS.LIST],
+    [RESOURCES.LEAVE]: [ACTIONS.READ, ACTIONS.LIST],
+    [RESOURCES.EXAM]: [ACTIONS.READ, ACTIONS.LIST],
+    [RESOURCES.TIMETABLE]: [ACTIONS.READ, ACTIONS.LIST],
+    [RESOURCES.HOMEWORK]: [ACTIONS.READ, ACTIONS.LIST],
+    [RESOURCES.REPORT]: [ACTIONS.READ, ACTIONS.LIST]
   }
 };
 
@@ -125,6 +139,28 @@ const attributePolicies = {
     condition: (user, resource) => {
       return user.role === 'STUDENT' && 
              (!resource || resource.student?.toString() === user.id);
+    }
+  },
+  
+  // Parents can view their linked child's attendance
+  parentLinkedAttendance: {
+    resource: RESOURCES.ATTENDANCE,
+    action: [ACTIONS.READ, ACTIONS.LIST],
+    condition: (user, resource, context) => {
+      if (user.role !== 'PARENT') return true;
+      return context?.linkedStudentId && 
+             (!resource || resource.student?.toString() === context.linkedStudentId);
+    }
+  },
+  
+  // Parents can view their linked child's marks
+  parentLinkedMarks: {
+    resource: RESOURCES.MARKS,
+    action: [ACTIONS.READ, ACTIONS.LIST],
+    condition: (user, resource, context) => {
+      if (user.role !== 'PARENT') return true;
+      return context?.linkedStudentId && 
+             (!resource || resource.student?.toString() === context.linkedStudentId);
     }
   },
   

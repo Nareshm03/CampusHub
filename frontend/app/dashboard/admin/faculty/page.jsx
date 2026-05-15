@@ -4,7 +4,8 @@ import ProtectedRoute from '../../../../components/ProtectedRoute';
 import Card from '../../../../components/ui/Card';
 import Button from '../../../../components/ui/Button';
 import Modal from '../../../../components/ui/Modal';
-import { ArrowUpIcon, ArrowDownIcon, MagnifyingGlassIcon, PlusIcon, PencilIcon, TrashIcon } from '@heroicons/react/24/outline';
+import ChangePasswordModal from '../../../../components/ui/ChangePasswordModal';
+import { ArrowUpIcon, ArrowDownIcon, MagnifyingGlassIcon, PlusIcon, PencilIcon, TrashIcon, KeyIcon } from '@heroicons/react/24/outline';
 import { toast } from 'sonner';
 import api from '../../../../lib/axios';
 
@@ -38,6 +39,8 @@ export default function AdminFacultyPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [departments, setDepartments] = useState([]);
   const [subjects, setSubjects] = useState([]);
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [selectedUserForPassword, setSelectedUserForPassword] = useState(null);
 
   const fetchFaculty = useCallback(async (retries = 0) => {
     try {
@@ -215,6 +218,14 @@ export default function AdminFacultyPage() {
       toast.error(error.response?.data?.error || 'Failed to delete faculty member');
       console.error('Error deleting faculty:', error);
     }
+  };
+
+  const handleChangePassword = (member) => {
+    setSelectedUserForPassword({
+      userId: member.userId,
+      userName: member.name || 'Faculty'
+    });
+    setChangePasswordOpen(true);
   };
 
   const handleSort = (column) => {
@@ -424,6 +435,13 @@ export default function AdminFacultyPage() {
                             title="Edit Faculty"
                           >
                             <PencilIcon className="w-5 h-5" />
+                          </button>
+                          <button
+                            onClick={() => handleChangePassword(member)}
+                            className="p-2 text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-lg transition-colors"
+                            title="Change Password"
+                          >
+                            <KeyIcon className="w-5 h-5" />
                           </button>
                           <button
                             onClick={() => handleDeleteFaculty(member)}
@@ -878,6 +896,16 @@ export default function AdminFacultyPage() {
           </form>
         </Modal>
       </div>
+
+      <ChangePasswordModal
+        isOpen={changePasswordOpen}
+        onClose={() => {
+          setChangePasswordOpen(false);
+          setSelectedUserForPassword(null);
+        }}
+        userId={selectedUserForPassword?.userId}
+        userName={selectedUserForPassword?.userName}
+      />
     </ProtectedRoute>
   );
 }

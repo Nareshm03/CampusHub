@@ -5,7 +5,8 @@ const {
   getAllUsers,
   deleteUser,
   updateUser,
-  removeUserAccess
+  removeUserAccess,
+  adminChangeUserPassword
 } = require('../controllers/usersController');
 const { protect, authorize } = require('../middleware/auth');
 
@@ -15,7 +16,8 @@ router.get('/faculty/department', protect, authorize('FACULTY'), getFacultyInMyD
 router.get('/faculty', protect, authorize('ADMIN'), getFacultyUsers);
 router.get('/', protect, authorize('ADMIN'), getAllUsers);
 router.delete('/:id', protect, authorize('ADMIN'), deleteUser);
+router.put('/:id/change-password', protect, authorize('ADMIN'), adminChangeUserPassword);
 router.put('/:id', protect, authorize('ADMIN'), updateUser);
 router.patch('/:id/remove-access', protect, authorize('ADMIN'), removeUserAccess);
 
-module.exports = router;
+module.exports = router;

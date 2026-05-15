@@ -14,6 +14,8 @@ import {
   ClipboardDocumentListIcon,
   UserCircleIcon,
   ExclamationTriangleIcon,
+  ClipboardDocumentCheckIcon,
+  PencilSquareIcon,
 } from '@heroicons/react/24/outline';
 import { ProgressRing } from '../../../components/Charts';
 
@@ -33,6 +35,11 @@ export default function ParentDashboard() {
       const res = await api.get('/parent/dashboard');
       setLinked(res.data.linked);
       setDashboard(res.data.data);
+      
+      // Store student data in sessionStorage for other pages to use
+      if (res.data.linked && res.data.data) {
+        sessionStorage.setItem('parentDashboard', JSON.stringify(res.data.data));
+      }
     } catch {
       setLinked(false);
     } finally {
@@ -143,7 +150,7 @@ export default function ParentDashboard() {
 
       {/* Marks Summary */}
       {marks.length > 0 && (
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
           <Card className="p-6">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
               <AcademicCapIcon className="h-5 w-5 text-blue-500" /> Internal Marks
@@ -182,7 +189,7 @@ export default function ParentDashboard() {
 
       {/* Attendance At-Risk */}
       {attendance.atRiskCount > 0 && (
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
           <Card className="p-6 border-l-4 border-red-500">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
               <ExclamationTriangleIcon className="h-5 w-5 text-red-500" /> Low Attendance Subjects
@@ -200,7 +207,7 @@ export default function ParentDashboard() {
       )}
 
       {/* Recent Notices + Quick Links */}
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}
         className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card className="p-6">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
@@ -226,10 +233,11 @@ export default function ParentDashboard() {
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Quick Actions</h2>
           <div className="space-y-3">
             {[
-              { name: 'View Fees', desc: fees.totalDue > 0 ? `₹${fees.totalDue.toLocaleString()} due` : 'All paid', icon: CurrencyDollarIcon, href: '/fees', color: 'text-green-500', bg: 'bg-green-100 dark:bg-green-900/30' },
-              { name: 'All Notices', desc: 'Campus announcements', icon: BellAlertIcon, href: '/notices', color: 'text-blue-500', bg: 'bg-blue-100 dark:bg-blue-900/30' },
-              { name: 'Attendance Details', desc: `${attendance.subjects.length} subjects tracked`, icon: ClipboardDocumentListIcon, href: '/attendance/student', color: 'text-purple-500', bg: 'bg-purple-100 dark:bg-purple-900/30' },
-              { name: 'Help & Support', desc: 'Contact administration', icon: QuestionMarkCircleIcon, href: '/tickets', color: 'text-orange-500', bg: 'bg-orange-100 dark:bg-orange-900/30' },
+              { name: 'View Attendance', desc: `${attendance.subjects.length} subjects tracked`, icon: ClipboardDocumentCheckIcon, href: '/attendance/student', color: 'text-blue-500', bg: 'bg-blue-100 dark:bg-blue-900/30' },
+              { name: 'View Marks', desc: `${marks.length} subjects`, icon: PencilSquareIcon, href: '/marks/student', color: 'text-green-500', bg: 'bg-green-100 dark:bg-green-900/30' },
+              { name: 'View Fees', desc: fees.totalDue > 0 ? `₹${fees.totalDue.toLocaleString()} due` : 'All paid', icon: CurrencyDollarIcon, href: '/fees', color: 'text-purple-500', bg: 'bg-purple-100 dark:bg-purple-900/30' },
+              { name: 'All Notices', desc: 'Campus announcements', icon: BellAlertIcon, href: '/notices', color: 'text-orange-500', bg: 'bg-orange-100 dark:bg-orange-900/30' },
+              { name: 'Help & Support', desc: 'Contact administration', icon: QuestionMarkCircleIcon, href: '/tickets', color: 'text-red-500', bg: 'bg-red-100 dark:bg-red-900/30' },
             ].map(link => (
               <Link href={link.href} key={link.name}>
                 <div className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors cursor-pointer">

@@ -1,67 +1,123 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
+import { useAuth } from '@/context/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import Card from '@/components/ui/Card';
 import { AcademicCapIcon, ChartBarIcon } from '@heroicons/react/24/outline';
 import api from '@/lib/axios';
 
 export default function InternalMarksPage() {
+  const { user } = useAuth();
   const [marks, setMarks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ internal1Avg: 0, internal2Avg: 0, internal3Avg: 0 });
+  const [studentData, setStudentData] = useState(null);
 
   useEffect(() => {
-    fetchInternalMarks();
-  }, []);
+    if (user) {
+      fetchInternalMarks();
+    }
+  }, [user]);
 
   const fetchInternalMarks = async () => {
     try {
       setLoading(true);
-      const response = await api.get('/marks/my');
-      const marksData = response.data.data || [];
       
-      // Group marks by subject and merge internal1, 2, 3
-      const subjectMarks = {};
-      marksData.forEach(mark => {
-        const subjectId = mark.subject?._id;
-        if (subjectId) {
-          if (!subjectMarks[subjectId]) {
-            subjectMarks[subjectId] = {
-              _id: mark._id,
-              subject: mark.subject,
-              internal1: 0,
-              internal2: 0,
-              internal3: 0
-            };
-          }
-          // Merge marks from different entries
-          if (mark.internal1 > 0) subjectMarks[subjectId].internal1 = mark.internal1;
-          if (mark.internal2 > 0) subjectMarks[subjectId].internal2 = mark.internal2;
-          if (mark.internal3 > 0) subjectMarks[subjectId].internal3 = mark.internal3;
-        }
-      });
+      let studentId;
       
-      const mergedMarks = Object.values(subjectMarks);
-      setMarks(mergedMarks);
-      
-      // Calculate averages
-      if (mergedMarks.length > 0) {
-        const int1Total = mergedMarks.reduce((sum, m) => sum + (m.internal1 || 0), 0);
-        const int2Total = mergedMarks.reduce((sum, m) => sum + (m.internal2 || 0), 0);
-        const int3Total = mergedMarks.reduce((sum, m) => sum + (m.internal3 || 0), 0);
+      // Handle different user roles
+      if (user?.role === 'PARENT') {
+        // For parents, try sessionStorage first, then fetch if needed
+        let dashboard;
+        const storedDashboard = sessionStorage.getItem('parentDashboard');
         
-        setStats({
-          internal1Avg: (int1Total / mergedMarks.length).toFixed(2),
-          internal2Avg: (int2Total / mergedMarks.length).toFixed(2),
-          internal3Avg: (int3Total / mergedMarks.length).toFixed(2)
+        if (storedDashboard) {
+          dashboard = JSON.parse(storedDashboard);
+        } else {
+          // Fetch parent dashboard if not in sessionStorage
+          const parentRes = await api.get('/parent/dashboard');
+          if (!parentRes?.data?.linked || !parentRes?.data?.data) {
+            toast.error('No linked student found');
+            return;
+          }
+          dashboard = parentRes.data.data;
+          sessionStorage.setItem('parentDashboard', JSON.stringify(dashboard));
+        }
+        
+        // Fetch the full student profile to get the _id
+        const studentProfile = await api.get('/parent/child');
+        if (!studentProfile?.data?.data) {
+          toast.error('Failed to get student profile');
+          return;
+        }
+        
+        studentId = studentProfile.data.data._id;
+        setStudentData({
+          _id: studentProfile.data.data._id,
+          name: studentProfile.data.data.userId?.name || dashboard.student?.name,
+          usn: studentProfile.data.data.usn || dashboard.student?.usn
         });
+        
+        if (!studentId) {
+          toast.error('Student information not available');
+          return;
+        }
+        
+        // Fetch marks for the linked student
+        const response = await api.get(`/marks/student/${studentId}`);
+        const marksData = response.data.data || [];
+        processMarks(marksData);
+      } else {
+        // For students, fetch their own marks
+        const response = await api.get('/marks/my');
+        const marksData = response.data.data || [];
+        processMarks(marksData);
       }
     } catch (error) {
       console.error('Error fetching marks:', error);
       toast.error('Failed to fetch internal marks');
     } finally {
       setLoading(false);
+    }
+  };
+  
+  const processMarks = (marksData) => {
+    // Group marks by subject and merge internal1, 2, 3
+    const subjectMarks = {};
+    marksData.forEach(mark => {
+      const subjectId = mark.subject?._id;
+      if (subjectId) {
+        if (!subjectMarks[subjectId]) {
+          subjectMarks[subjectId] = {
+            _id: mark._id,
+            subject: mark.subject,
+            internal1: 0,
+            internal2: 0,
+            internal3: 0
+          };
+        }
+        // Merge marks from different entries
+        if (mark.internal1 > 0) subjectMarks[subjectId].internal1 = mark.internal1;
+        if (mark.internal2 > 0) subjectMarks[subjectId].internal2 = mark.internal2;
+        if (mark.internal3 > 0) subjectMarks[subjectId].internal3 = mark.internal3;
+      }
+    });
+    
+    const mergedMarks = Object.values(subjectMarks);
+    setMarks(mergedMarks);
+    
+    // Calculate averages
+    if (mergedMarks.length > 0) {
+      const int1Total = mergedMarks.reduce((sum, m) => sum + (m.internal1 || 0), 0);
+      const int2Total = mergedMarks.reduce((sum, m) => sum + (m.internal2 || 0), 0);
+      const int3Total = mergedMarks.reduce((sum, m) => sum + (m.internal3 || 0), 0);
+      
+      setStats({
+        internal1Avg: (int1Total / mergedMarks.length).toFixed(2),
+        internal2Avg: (int2Total / mergedMarks.length).toFixed(2),
+        internal3Avg: (int3Total / mergedMarks.length).toFixed(2)
+      });
     }
   };
 
@@ -79,13 +135,17 @@ export default function InternalMarksPage() {
   };
 
   return (
-    <ProtectedRoute allowedRoles={['STUDENT']}>
+    <ProtectedRoute allowedRoles={['STUDENT', 'PARENT']}>
       <div className="container py-8">
         <div className="flex items-center gap-3 mb-6">
           <AcademicCapIcon className="w-8 h-8 text-primary-600" />
           <div>
-            <h1 className="text-3xl font-bold">Internal Assessment Marks</h1>
-            <p className="text-gray-600 dark:text-gray-400 mt-1">View your internal examination scores</p>
+            <h1 className="text-3xl font-bold">
+              {user?.role === 'PARENT' && studentData ? `${studentData.name}'s Internal Marks` : 'Internal Assessment Marks'}
+            </h1>
+            <p className="text-gray-600 dark:text-gray-400 mt-1">
+              {user?.role === 'PARENT' ? 'View your child\'s internal examination scores' : 'View your internal examination scores'}
+            </p>
           </div>
         </div>
 

@@ -22,6 +22,25 @@ router.get('/',
   getAttendance
 );
 
+// Student-specific routes (no studentId param needed)
+router.get('/my-summary',
+  protect,
+  authorize('STUDENT'),
+  getAttendanceSummary
+);
+
+router.get('/my-records',
+  protect,
+  authorize('STUDENT'),
+  getStudentAttendance
+);
+
+router.get('/my-trends',
+  protect,
+  authorize('STUDENT'),
+  getAttendanceTrends
+);
+
 // Get attendance summary for specific student
 router.get('/summary/:studentId', 
   protect, 

@@ -18,7 +18,9 @@ import {
   PresentationChartLineIcon,
   ClipboardDocumentListIcon,
   BookOpenIcon,
+  KeyIcon,
 } from '@heroicons/react/24/outline';
+import ChangePasswordModal from '../../../components/ui/ChangePasswordModal';
 import { BarChart } from '../../../components/Charts';
 import WeeklyTimetable from '../../../components/WeeklyTimetable';
 
@@ -48,6 +50,7 @@ export default function FacultyDashboard() {
   const [recentActivities, setRecentActivities] = useState({ recentHomeworks: [], recentGradings: [] });
   const [facultyName, setFacultyName] = useState('Faculty');
   const [loading, setLoading] = useState(true);
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -145,11 +148,20 @@ export default function FacultyDashboard() {
 
         {/* Header */}
         <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
-          <div className="flex items-center justify-between mb-2">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{getGreeting()}, {facultyName}! 👋</h1>
-            <Link href="/dashboard/faculty/attendance">
-              <Button variant="primary" size="md">Mark Attendance</Button>
-            </Link>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setChangePasswordOpen(true)}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 text-sm font-medium transition-colors"
+              >
+                <KeyIcon className="w-4 h-4" />
+                Change Password
+              </button>
+              <Link href="/dashboard/faculty/attendance">
+                <Button variant="primary" size="md">Mark Attendance</Button>
+              </Link>
+            </div>
           </div>
           <p className="text-gray-600 dark:text-gray-400">Welcome back to your CampusHub dashboard. Manage your classes, students, and academic activities.</p>
 
@@ -276,6 +288,11 @@ export default function FacultyDashboard() {
         </div>
 
       </div>
+
+      <ChangePasswordModal
+        isOpen={changePasswordOpen}
+        onClose={() => setChangePasswordOpen(false)}
+      />
     </ProtectedRoute>
   );
 }
