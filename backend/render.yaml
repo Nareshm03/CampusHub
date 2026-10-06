@@ -36,4 +36,10 @@ services:
       - key: ENABLE_MOCK_EMAIL
         value: false
       - key: ENABLE_MOCK_PAYMENTS
-        value: true
+        value: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: REDIS_URL
+        sync: false

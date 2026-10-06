@@ -43,6 +43,21 @@ const studentSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Subject'
   }],
+  // Placement profile (managed via /placements/skills endpoints)
+  skills: [{
+    type: String,
+    trim: true
+  }],
+  certifications: [{
+    name: String,
+    issuer: String,
+    date: String
+  }],
+  projects: [{
+    name: String,
+    tech: [String],
+    description: String
+  }],
   phone: {
     type: String,
     trim: true,

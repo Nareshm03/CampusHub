@@ -1,6 +1,9 @@
 const express = require('express');
 const {
   createFee,
+  listFees,
+  updateFee,
+  deleteFee,
   getStudentFees,
   getMyFees,
   recordPayment,
@@ -23,7 +26,10 @@ router.post(
 
 router.get('/summary', protect, authorize('ADMIN'), getFeeSummary);
 router.get('/my', protect, authorize('STUDENT'), getMyFees);
+router.get('/', protect, authorize('ADMIN'), listFees);
 router.post('/', protect, authorize('ADMIN'), createFee);
+router.put('/:feeId', protect, authorize('ADMIN'), updateFee);
+router.delete('/:feeId', protect, authorize('ADMIN'), deleteFee);
 router.get('/student/:studentId', protect, getStudentFees);
 router.post('/:feeId/payment', protect, authorize('ADMIN'), recordPayment);
 router.post('/:feeId/create-payment-intent', protect, createPaymentIntent);

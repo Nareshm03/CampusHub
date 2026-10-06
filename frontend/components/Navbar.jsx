@@ -58,6 +58,9 @@ const Navbar = () => {
         { href: '/marks/internal', label: 'Internal Marks' },
         { href: '/marks/semester', label: 'Semester Marks' },
         { href: '/exams', label: 'Exams' },
+        { href: '/fees', label: 'Fees' },
+        { href: '/placement/dashboard', label: 'Placements' },
+        { href: '/hostel', label: 'Hostel' },
         { href: '/notices', label: 'Notices' },
         { href: '/leaves', label: 'Leaves' },
         { href: '/dashboard/support', label: 'Support' },
@@ -66,6 +69,7 @@ const Navbar = () => {
       FACULTY: [
         { href: '/dashboard/faculty/attendance', label: 'Attendance' },
         { href: '/dashboard/faculty/marks', label: 'Enter Marks' },
+        { href: '/placement/manage', label: 'Placements' },
         { href: '/notices', label: 'Notices' },
         { href: '/dashboard/faculty/leaves', label: 'Leave Requests' },
         { href: '/dashboard/support', label: 'Support' },
@@ -73,6 +77,9 @@ const Navbar = () => {
       ADMIN: [
         { href: '/dashboard/admin/departments', label: 'Departments' },
         { href: '/dashboard/admin/subjects', label: 'Subjects' },
+        { href: '/placement/manage', label: 'Placements' },
+        { href: '/dashboard/admin/hostel', label: 'Hostel' },
+        { href: '/dashboard/admin/bulk', label: 'Import/Export' },
         { href: '/dashboard/admin/notices', label: 'Notices' },
         { href: '/dashboard/admin/reports', label: 'Reports' },
         { href: '/dashboard/admin/tickets', label: 'Tickets' },

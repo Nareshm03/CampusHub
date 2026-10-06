@@ -29,6 +29,9 @@ const TicketManagement = () => {
     assignedTo: '',
     response: ''
   });
+  const [expandedId, setExpandedId] = useState(null);
+  const [replyText, setReplyText] = useState({});
+  const [replying, setReplying] = useState(false);
 
   const categories = [
     { value: 'timetable', label: 'Timetable Issue' },
@@ -103,8 +106,26 @@ const TicketManagement = () => {
     }
   };
 
-  const openUpdateModal = (ticket) => {
-    setSelectedTicket(ticket);
+  const handleReply = async (ticketId) => {
+    const message = (replyText[ticketId] || '').trim();
+    if (!message) {
+      toast.error('Reply message cannot be empty');
+      return;
+    }
+    setReplying(true);
+    try {
+      await axios.post(`/tickets/${ticketId}/comments`, { message });
+      setReplyText((prev) => ({ ...prev, [ticketId]: '' }));
+      fetchTickets();
+      toast.success('Reply posted');
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to post reply');
+    } finally {
+      setReplying(false);
+    }
+  };
+
+  const openUpdateModal = (ticket) => {    setSelectedTicket(ticket);
     setUpdateData({
       status: ticket.status,
       assignedTo: ticket.assignedTo?._id || '',
@@ -349,7 +370,49 @@ const TicketManagement = () => {
                   <span className="px-3 py-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full text-xs font-medium">
                     {categories.find(c => c.value === ticket.category)?.label || ticket.category}
                   </span>
+                  <button
+                    onClick={() => setExpandedId((prev) => (prev === ticket._id ? null : ticket._id))}
+                    className="text-xs text-blue-600 dark:text-blue-400 hover:underline font-medium"
+                  >
+                    {expandedId === ticket._id ? 'Hide replies' : `Replies (${(ticket.comments || []).length})`}
+                  </button>
                 </div>
+
+                {expandedId === ticket._id && (
+                  <div className="mb-4 border-t border-gray-200 dark:border-gray-700 pt-3">
+                    {(ticket.comments || []).length === 0 ? (
+                      <p className="text-xs text-gray-500 mb-2">No replies yet.</p>
+                    ) : (
+                      <div className="space-y-2 mb-3">
+                        {ticket.comments.map((comment, idx) => (
+                          <div key={comment._id || idx} className="text-sm bg-gray-50 dark:bg-gray-700/50 rounded p-2">
+                            <span className="font-medium">{comment.user?.name || 'Unknown'}: </span>
+                            <span className="text-gray-600 dark:text-gray-400">{comment.message}</span>
+                            <span className="text-xs text-gray-400 ml-2">
+                              {comment.timestamp ? new Date(comment.timestamp).toLocaleString() : ''}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={replyText[ticket._id] || ''}
+                        onChange={(e) => setReplyText((prev) => ({ ...prev, [ticket._id]: e.target.value }))}
+                        placeholder="Write a reply..."
+                        className="flex-1 px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700"
+                      />
+                      <button
+                        onClick={() => handleReply(ticket._id)}
+                        disabled={replying}
+                        className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        {replying ? 'Sending...' : 'Reply'}
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 <div className="flex justify-between items-center text-sm text-gray-500 dark:text-gray-400 pt-4 border-t border-gray-200 dark:border-gray-700">
                   <div className="flex items-center gap-4">

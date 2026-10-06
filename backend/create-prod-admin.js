@@ -3,8 +3,12 @@ const mongoose = require('mongoose');
 const User = require('./src/models/User');
 const Department = require('./src/models/Department');
 
-// IMPORTANT: Use production database
-const PROD_MONGODB_URI = 'mongodb+srv://nareshmurthy080_db_user:wCO0hi3827r6I17O@databasetest.peyxbzx.mongodb.net/campushub_prod?retryWrites=true&w=majority&appName=Databasetest';
+// IMPORTANT: production URI must come from the environment — never hardcode credentials.
+const PROD_MONGODB_URI = process.env.MONGODB_URI || process.env.PROD_MONGODB_URI;
+if (!PROD_MONGODB_URI) {
+  console.error('Set MONGODB_URI env var to the production connection string.');
+  process.exit(1);
+}
 
 const createProdAdmin = async () => {
   try {

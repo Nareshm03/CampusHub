@@ -3,20 +3,23 @@ import { useState, useEffect } from 'react';
 import { Trophy, Target, Award, TrendingUp, Building2 } from 'lucide-react';
 import api from '../lib/axios';
 
-export default function PlacementReadiness({ studentId }) {
+export default function PlacementReadiness() {
   const [readiness, setReadiness] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     fetchReadiness();
-  }, [studentId]);
+  }, []);
 
   const fetchReadiness = async () => {
     try {
-      const response = await api.get(`/placement/readiness/${studentId}`);
-      setReadiness(response.data);
+      setError('');
+      const response = await api.get('/placements/readiness/me');
+      setReadiness(response.data?.data || null);
     } catch (error) {
       console.error('Failed to fetch readiness:', error);
+      setError(error.response?.data?.message || 'Failed to load readiness score');
     } finally {
       setLoading(false);
     }
@@ -25,10 +28,12 @@ export default function PlacementReadiness({ studentId }) {
   const recalculate = async () => {
     setLoading(true);
     try {
-      const response = await api.post(`/placement/readiness/${studentId}/calculate`);
-      setReadiness(response.data);
+      setError('');
+      const response = await api.post('/placements/readiness/me/calculate');
+      setReadiness(response.data?.data || null);
     } catch (error) {
       console.error('Failed to recalculate:', error);
+      setError(error.response?.data?.message || 'Failed to recalculate score');
     } finally {
       setLoading(false);
     }
@@ -64,7 +69,7 @@ export default function PlacementReadiness({ studentId }) {
   if (!readiness) {
     return (
       <div className="bg-white rounded-lg shadow-md p-6 text-center">
-        <p className="text-gray-500">No readiness data available</p>
+        <p className="text-gray-500">{error || 'No readiness data available'}</p>
         <button 
           onClick={recalculate}
           className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"

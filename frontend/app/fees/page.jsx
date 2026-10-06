@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { useAuth } from '../../context/AuthContext';
+import ProtectedRoute from '../../components/ProtectedRoute';
 import api from '../../lib/axios';
 import Card from '../../components/ui/Card';
 import { PageLoader } from '../../components/ui/Loading';
@@ -106,6 +107,10 @@ export default function StudentFeesPage() {
   const initiatePayment = async (feeId, balance) => {
     try {
       const res = await api.post(`/fees/${feeId}/create-payment-intent`);
+      if (res.data?.mock) {
+        toast.error('Online payments are not configured. Please contact the administration.');
+        return;
+      }
       if (res.data?.success) {
         setActivePayment({
           feeId,
@@ -123,9 +128,14 @@ export default function StudentFeesPage() {
     fetchFees();
   };
 
-  if (loading) return <PageLoader message="Loading financial records…" />;
+  if (loading) return (
+    <ProtectedRoute allowedRoles={['STUDENT', 'PARENT']}>
+      <PageLoader message="Loading financial records…" />
+    </ProtectedRoute>
+  );
 
   return (
+    <ProtectedRoute allowedRoles={['STUDENT', 'PARENT']}>
     <div className="max-w-5xl mx-auto space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Fees & Payments</h1>
@@ -185,6 +195,18 @@ export default function StudentFeesPage() {
                           {fmt(fee.paidAmount || 0)}
                         </span>
                       </p>
+                      <details className="pt-1">
+                        <summary className="cursor-pointer text-xs text-gray-500 hover:text-gray-700">
+                          Category breakdown
+                        </summary>
+                        <div className="mt-1 space-y-0.5 text-xs text-gray-600 dark:text-gray-400">
+                          <p>Tuition: {fmt(fee.tuitionFee || 0)}</p>
+                          <p>Exam: {fmt(fee.examFee || 0)}</p>
+                          <p>Library: {fmt(fee.libraryFee || 0)}</p>
+                          <p>Lab: {fmt(fee.labFee || 0)}</p>
+                          <p>Other: {fmt(fee.otherFees || 0)}</p>
+                        </div>
+                      </details>
                     </div>
                   </div>
 
@@ -245,5 +267,6 @@ export default function StudentFeesPage() {
         )}
       </div>
     </div>
+    </ProtectedRoute>
   );
 }

@@ -76,6 +76,10 @@ const issueBook = async (req, res, next) => {
 
     const book = await Library.findById(bookId);
     if (!book) return res.status(404).json({ success: false, error: 'Book not found' });
+
+    const student = await Student.findById(studentId);
+    if (!student) return res.status(404).json({ success: false, error: 'Student not found' });
+
     if (book.book.availableCopies <= 0) {
       return res.status(400).json({ success: false, error: 'No copies available' });
     }
@@ -159,7 +163,7 @@ const getIssuedBooks = async (req, res, next) => {
     const { status = 'ISSUED' } = req.query;
     const books = await Library.find({ 'transactions.0': { $exists: true } })
       .select('book transactions')
-      .populate('transactions.student', 'name rollNumber');
+      .populate({ path: 'transactions.student', select: 'usn userId', populate: { path: 'userId', select: 'name email' } });
 
     const transactions = books.flatMap(b =>
       b.transactions
@@ -179,4 +183,53 @@ const getIssuedBooks = async (req, res, next) => {
   }
 };
 
-module.exports = { getBooks, getBookById, addBook, issueBook, returnBook, getMyBooks, getIssuedBooks };
+// @desc    Update book catalog entry
+// @route   PUT /api/library/books/:id
+// @access  Private/Admin
+const updateBook = async (req, res, next) => {
+  try {
+    const book = await Library.findById(req.params.id);
+    if (!book) return res.status(404).json({ success: false, error: 'Book not found' });
+
+    const allowed = ['title', 'author', 'isbn', 'category', 'description', 'coverImage'];
+    allowed.forEach((field) => {
+      if (req.body[field] !== undefined) book.book[field] = req.body[field];
+    });
+    if (req.body.totalCopies !== undefined) {
+      const total = Number(req.body.totalCopies);
+      if (!Number.isInteger(total) || total < 1) {
+        return res.status(400).json({ success: false, error: 'totalCopies must be an integer >= 1' });
+      }
+      const issued = book.transactions.filter((t) => t.status === 'ISSUED').length;
+      if (total < issued) {
+        return res.status(400).json({ success: false, error: `totalCopies cannot be below issued count (${issued})` });
+      }
+      book.book.availableCopies = total - issued;
+      book.book.totalCopies = total;
+    }
+
+    await book.save();
+    res.json({ success: true, data: book });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Delete book from catalog
+// @route   DELETE /api/library/books/:id
+// @access  Private/Admin
+const deleteBook = async (req, res, next) => {
+  try {
+    const book = await Library.findById(req.params.id);
+    if (!book) return res.status(404).json({ success: false, error: 'Book not found' });
+    if (book.transactions.some((t) => t.status === 'ISSUED')) {
+      return res.status(400).json({ success: false, error: 'Cannot delete a book with active loans' });
+    }
+    await book.deleteOne();
+    res.json({ success: true, message: 'Book deleted successfully' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = { getBooks, getBookById, addBook, updateBook, deleteBook, issueBook, returnBook, getMyBooks, getIssuedBooks };

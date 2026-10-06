@@ -37,7 +37,8 @@ export default function FacultyNoticesPage() {
 
   const fetchNotices = async () => {
     try {
-      const res = await api.get('/notices');
+      // Faculty-scoped endpoint (GET /notices is ADMIN-only)
+      const res = await api.get('/notices/faculty');
       setNotices(res.data.data || []);
     } catch {
       toast.error('Failed to fetch notices');

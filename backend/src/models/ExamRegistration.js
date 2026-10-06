@@ -18,7 +18,8 @@ const examRegistrationSchema = new mongoose.Schema({
   },
   hallTicketNumber: {
     type: String,
-    unique: true
+    unique: true,
+    sparse: true
   },
   status: {
     type: String,

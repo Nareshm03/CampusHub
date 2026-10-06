@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import ProtectedRoute from '../../../../components/ProtectedRoute';
+import GradeEntry from '../../../../components/GradeEntry';
 import Card from '../../../../components/ui/Card';
 import Button from '../../../../components/ui/Button';
 import Input from '../../../../components/ui/Input';
@@ -30,6 +31,7 @@ export default function FacultyMarksManagement() {
   const [loading, setLoading] = useState(true);
   const [fetchingStudents, setFetchingStudents] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [entryMode, setEntryMode] = useState('detailed'); // 'detailed' | 'quick'
 
   const examOptions = {
     INTERNAL: ['Internal 1', 'Internal 2', 'Internal 3'],
@@ -336,18 +338,41 @@ export default function FacultyMarksManagement() {
                     <AcademicCapIcon className="w-5 h-5 mr-2 text-indigo-500" />
                     Students List
                   </h3>
-                  {selectedSubject && students.length > 0 && (
-                    <Button 
-                      variant="primary" 
-                      onClick={handleSaveMarks}
-                      isLoading={saving}
-                    >
-                      <ClipboardDocumentCheckIcon className="w-5 h-5 mr-2" />
-                      Save Marks
-                    </Button>
+                  {selectedSubject && (
+                    <div className="flex items-center gap-2">
+                      <div className="flex rounded-md overflow-hidden border border-gray-200 dark:border-gray-700">
+                        <button
+                          onClick={() => setEntryMode('detailed')}
+                          className={`px-3 py-1.5 text-sm font-medium ${entryMode === 'detailed' ? 'bg-blue-600 text-white' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300'}`}
+                        >
+                          Detailed
+                        </button>
+                        <button
+                          onClick={() => setEntryMode('quick')}
+                          className={`px-3 py-1.5 text-sm font-medium ${entryMode === 'quick' ? 'bg-blue-600 text-white' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300'}`}
+                        >
+                          Quick Entry
+                        </button>
+                      </div>
+                      {entryMode === 'detailed' && students.length > 0 && (
+                      <Button 
+                        variant="primary" 
+                        onClick={handleSaveMarks}
+                        isLoading={saving}
+                      >
+                        <ClipboardDocumentCheckIcon className="w-5 h-5 mr-2" />
+                        Save Marks
+                      </Button>
+                      )}
+                    </div>
                   )}
                 </div>
                 
+                {entryMode === 'quick' && selectedSubject ? (
+                  <div className="p-4">
+                    <GradeEntry subjectId={selectedSubject} />
+                  </div>
+                ) : (
                 <div className="p-0">
                   {!selectedSubject ? (
                     <div className="p-12 text-center">
@@ -425,6 +450,7 @@ export default function FacultyMarksManagement() {
                     </div>
                   )}
                 </div>
+                )}
               </Card>
             </motion.div>
           </div>

@@ -61,11 +61,14 @@ export default function AdminDashboard() {
     totalDepartments: 0,
     totalSubjects: 0,
     pendingTickets: 0,
+    pendingLeaves: 0,
+    placedStudents: 0,
     recentNotices: 0,
     attendanceChart: [],
     marksChart: []
   });
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
     fetchDashboardData();
@@ -73,49 +76,78 @@ export default function AdminDashboard() {
 
   const fetchDashboardData = async () => {
     try {
-      const [studentsRes, facultyRes, parentsRes, departmentsRes, subjectsRes, ticketsRes, noticesRes, attendanceRes, marksRes] = await Promise.all([
-        api.get('/students/count').catch(() => ({ data: { data: { count: 0 } } })),
-        api.get('/faculty/count').catch(() => ({ data: { data: { count: 0 } } })),
-        api.get('/parent/count').catch(() => ({ data: { data: { count: 0 } } })),
-        api.get('/departments').catch(() => ({ data: { data: [] } })),
-        api.get('/subjects').catch(() => ({ data: { data: [] } })),
-        api.get('/tickets').catch(() => ({ data: { data: [] } })),
-        api.get('/notices').catch(() => ({ data: { data: [] } })),
-        api.get('/reports/attendance').catch(() => ({ data: { data: [] } })),
-        api.get('/reports/marks').catch(() => ({ data: { data: [] } }))
+      setLoadError('');
+      const calls = await Promise.allSettled([
+        api.get('/students/count'),
+        api.get('/faculty/count'),
+        api.get('/parent/count'),
+        api.get('/departments'),
+        api.get('/subjects'),
+        api.get('/tickets'),
+        api.get('/notices'),
+        api.get('/leaves/pending'),
+        api.get('/placements/statistics'),
+        api.get('/admin/analytics')
       ]);
 
-      const attendanceData = attendanceRes.data.data || [];
-      const marksData = marksRes.data.data || [];
+      const failures = [];
+      const value = (index, fallback) => {
+        const r = calls[index];
+        if (r.status === 'fulfilled') return r.value;
+        failures.push(index);
+        return { data: { data: fallback } };
+      };
 
-      // Attendance distribution by status
-      const goodAtt = attendanceData.filter(a => a.status === 'Good').length;
-      const warnAtt = attendanceData.filter(a => a.status === 'Warning').length;
-      const lowAtt = attendanceData.filter(a => a.status === 'Low').length;
+      const studentsRes = value(0, { count: 0 });
+      const facultyRes = value(1, { count: 0 });
+      const parentsRes = value(2, { count: 0 });
+      const departmentsRes = value(3, []);
+      const subjectsRes = value(4, []);
+      const ticketsRes = value(5, []);
+      const noticesRes = value(6, []);
+      const leavesRes = value(7, []);
+      const placementRes = value(8, null);
+      const analyticsRes = value(9, null);
 
-      // Marks grade distribution
-      const gradeMap = {};
-      marksData.forEach(m => { if (m.grade && m.grade !== 'N/A') gradeMap[m.grade] = (gradeMap[m.grade] || 0) + 1; });
+      if (failures.length > 0) {
+        setLoadError('Some statistics failed to load and are shown as zero.');
+      }
+
+      const tickets = ticketsRes.data?.data || ticketsRes.data || [];
+      const notices = noticesRes.data?.data || noticesRes.data || [];
+      const leaves = leavesRes.data?.data || leavesRes.data || [];
+      const analytics = analyticsRes.data?.data || null;
+
+      // Grade distribution comes from real mark aggregates (O/A+/A… buckets)
+      const marksChart = (analytics?.gradeDistribution || [])
+        .map((g) => ({ label: g.name, value: g.count }))
+        .filter((d) => d.value > 0);
+
+      // Monthly attendance trend (percentage) from real attendance aggregates
+      const attendanceChart = (analytics?.attendanceTrends || [])
+        .map((t) => ({ label: t.month, value: t.attendance }))
+        .filter((d) => typeof d.value === 'number');
 
       setStats({
-        totalStudents: studentsRes.data.data?.count ?? 0,
-        totalFaculty: facultyRes.data.data?.count ?? 0,
-        totalParents: parentsRes.data.data?.count ?? 0,
-        totalDepartments: departmentsRes.data.data?.length || 0,
-        totalSubjects: subjectsRes.data.data?.length || 0,
-        pendingTickets: ticketsRes.data.data?.filter(t => t.status === 'PENDING')?.length || 0,
-        recentNotices: noticesRes.data.data?.filter(n => {
+        totalStudents: studentsRes.data?.data?.count ?? 0,
+        totalFaculty: facultyRes.data?.data?.count ?? 0,
+        totalParents: parentsRes.data?.data?.count ?? 0,
+        totalDepartments: (departmentsRes.data?.data || []).length,
+        totalSubjects: (subjectsRes.data?.data || []).length,
+        pendingTickets: (Array.isArray(tickets) ? tickets : []).filter((t) => t.status === 'open').length,
+        pendingLeaves: (Array.isArray(leaves) ? leaves : []).length,
+        placedStudents: placementRes.data?.data?.uniqueStudentsPlaced ?? 0,
+        recentNotices: (Array.isArray(notices) ? notices : []).filter((n) => {
           const weekAgo = new Date();
           weekAgo.setDate(weekAgo.getDate() - 7);
           return new Date(n.createdAt) > weekAgo;
-        })?.length || 0,
-        attendanceChart: attendanceData.length > 0
-          ? [{ label: 'Good', value: goodAtt }, { label: 'Warning', value: warnAtt }, { label: 'Low', value: lowAtt }].filter(d => d.value > 0)
-          : [],
-        marksChart: Object.entries(gradeMap).map(([label, value]) => ({ label, value }))
+        }).length,
+        attendanceChart,
+        marksChart
       });
     } catch (error) {
       console.error('Failed to fetch dashboard data:', error);
+      setLoadError('Failed to load dashboard data.');
       toast.error('Failed to load dashboard data');
     } finally {
       setLoading(false);
@@ -210,6 +242,14 @@ export default function AdminDashboard() {
       count: stats.pendingTickets
     },
     { 
+      icon: DocumentChartBarIcon,
+      title: 'Import / Export',
+      subtitle: 'Bulk data',
+      description: 'Import validated CSV data or export real records',
+      href: '/dashboard/admin/bulk',
+      color: 'teal'
+    },
+    { 
       icon: Cog6ToothIcon,
       title: 'Settings',
       subtitle: 'Configure system',
@@ -262,7 +302,12 @@ export default function AdminDashboard() {
           </div>
           
           {/* Quick Stats */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-6">
+          {loadError && (
+            <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200 rounded-lg text-sm">
+              {loadError}
+            </div>
+          )}
+          <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-4 mt-6">
             <Card className="p-4 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border-blue-200 dark:border-blue-800">
               <p className="text-sm font-medium text-blue-600 dark:text-blue-400">Total Students</p>
               <p className="text-2xl font-bold text-blue-900 dark:text-blue-100 mt-1">{stats.totalStudents}</p>
@@ -278,6 +323,14 @@ export default function AdminDashboard() {
             <Card className="p-4 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 border-amber-200 dark:border-amber-800">
               <p className="text-sm font-medium text-amber-600 dark:text-amber-400">Pending Tickets</p>
               <p className="text-2xl font-bold text-amber-900 dark:text-amber-100 mt-1">{stats.pendingTickets}</p>
+            </Card>
+            <Card className="p-4 bg-gradient-to-br from-cyan-50 to-sky-50 dark:from-cyan-900/20 dark:to-sky-900/20 border-cyan-200 dark:border-cyan-800">
+              <p className="text-sm font-medium text-cyan-600 dark:text-cyan-400">Pending Leaves</p>
+              <p className="text-2xl font-bold text-cyan-900 dark:text-cyan-100 mt-1">{stats.pendingLeaves}</p>
+            </Card>
+            <Card className="p-4 bg-gradient-to-br from-rose-50 to-red-50 dark:from-rose-900/20 dark:to-red-900/20 border-rose-200 dark:border-rose-800">
+              <p className="text-sm font-medium text-rose-600 dark:text-rose-400">Students Placed</p>
+              <p className="text-2xl font-bold text-rose-900 dark:text-rose-100 mt-1">{stats.placedStudents}</p>
             </Card>
           </div>
         </motion.div>
@@ -380,7 +433,7 @@ export default function AdminDashboard() {
           </Card>
           <Card className="p-6">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-              {stats.attendanceChart.length > 0 ? 'Attendance Distribution' : 'People Distribution'}
+              {stats.attendanceChart.length > 0 ? 'Monthly Attendance Trend (%)' : 'People Distribution'}
             </h2>
             <PieChart
               data={stats.attendanceChart.length > 0
@@ -392,6 +445,9 @@ export default function AdminDashboard() {
               }
               size={200}
             />
+            {stats.attendanceChart.length === 0 && (stats.totalStudents > 0 || stats.totalFaculty > 0) && (
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">No attendance trend data available.</p>
+            )}
           </Card>
           {stats.marksChart.length > 0 && (
             <Card className="p-6 lg:col-span-2">

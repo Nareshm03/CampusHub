@@ -3,7 +3,12 @@ const mongoose = require('mongoose');
 const User = require('./src/models/User');
 const bcrypt = require('bcryptjs');
 
-const PROD_URI = 'mongodb+srv://nareshmurthy080_db_user:wCO0hi3827r6I17O@databasetest.peyxbzx.mongodb.net/campushub_prod?retryWrites=true&w=majority&appName=Databasetest';
+// Production URI must come from the environment — never hardcode credentials.
+const PROD_URI = process.env.MONGODB_URI || process.env.PROD_MONGODB_URI;
+if (!PROD_URI) {
+  console.error('Set MONGODB_URI env var to the production connection string.');
+  process.exit(1);
+}
 
 const checkProdUsers = async () => {
   try {

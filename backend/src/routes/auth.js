@@ -13,6 +13,6 @@ router.put('/changepassword', protect, changePassword);
 router.post('/forgotpassword', authLimiter, forgotPassword);
 router.put('/resetpassword/:resettoken', resetPassword);
 router.get('/verifyemail/:token', verifyEmail);
-router.get('/logout', logout);
+router.get('/logout', protect, logout);
 
 module.exports = router;

@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose');
 const User = require('../models/User');
 const { getRedis } = require('../config/redis');
 
@@ -156,6 +157,58 @@ const checkOwnership = (req, res, next) => {
   next();
 };
 
+// Ensure faculty only write attendance/marks for their own subjects.
+// ADMIN bypasses; other roles are left to the route's own gates. Reads the
+// subject ids from body records ({ subjectId } in attendance[] / marks[]).
+// Empty bodies pass through so existing empty-payload behavior is preserved.
+const facultySubjectAccess = async (req, res, next) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        error: 'Access denied. Authentication required.'
+      });
+    }
+
+    if (req.user.role === 'ADMIN' || req.user.role !== 'FACULTY') {
+      return next();
+    }
+
+    const body = req.body || {};
+    const records = Array.isArray(body.attendance)
+      ? body.attendance
+      : Array.isArray(body.marks)
+        ? body.marks
+        : [];
+    const subjectIds = [...new Set(records.map((r) => r && r.subjectId).filter(Boolean))];
+
+    if (subjectIds.length === 0) {
+      return next();
+    }
+
+    const Subject = require('../models/Subject');
+    for (const subjectId of subjectIds) {
+      if (!mongoose.Types.ObjectId.isValid(subjectId)) {
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid subject ID format'
+        });
+      }
+      const owned = await Subject.exists({ _id: subjectId, faculty: req.user._id });
+      if (!owned) {
+        return res.status(403).json({
+          success: false,
+          error: 'Access denied. You can only modify your assigned subjects.'
+        });
+      }
+    }
+
+    next();
+  } catch (error) {
+    next(error);
+  }
+};
+
 // Legacy alias
 const protect = authenticateToken;
 
@@ -167,5 +220,6 @@ module.exports = {
   adminOrFaculty, 
   authorize, 
   checkOwnership,
+  facultySubjectAccess,
   blacklistToken
 };

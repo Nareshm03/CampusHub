@@ -27,7 +27,7 @@ router.get('/predictions', analyticsController.getPredictiveAnalytics);
 // Department-wide analytics (faculty/admin only)
 router.get(
   '/department',
-  authorize('faculty', 'admin'),
+  authorize('FACULTY', 'ADMIN'),
   analyticsController.getDepartmentAnalytics
 );
 

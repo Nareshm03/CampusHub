@@ -69,7 +69,7 @@ const getMyRoom = async (req, res, next) => {
 
     // Fall back to legacy direct allocation
     const hostel = await Hostel.findOne({ 'rooms.occupants': student._id })
-      .populate('rooms.occupants', 'usn userId');
+      .populate({ path: 'rooms.occupants', select: 'usn userId', populate: { path: 'userId', select: 'name email' } });
 
     if (!hostel) {
       return res.status(404).json({ success: false, error: 'No room allocated' });
@@ -115,6 +115,15 @@ const requestBooking = async (req, res, next) => {
 
     const { hostelId, roomNumber, moveInDate, checkOutDate, preferences } = req.body;
 
+    const moveIn = moveInDate ? new Date(moveInDate) : null;
+    const checkOut = checkOutDate ? new Date(checkOutDate) : null;
+    if (!moveIn || Number.isNaN(moveIn.getTime()) || !checkOut || Number.isNaN(checkOut.getTime())) {
+      return res.status(400).json({ success: false, error: 'Valid moveInDate and checkOutDate are required' });
+    }
+    if (checkOut <= moveIn) {
+      return res.status(400).json({ success: false, error: 'checkOutDate must be after moveInDate' });
+    }
+
     // Validate room exists and has space
     const hostel = await Hostel.findById(hostelId);
     if (!hostel) return res.status(404).json({ success: false, error: 'Hostel not found' });
@@ -129,8 +138,8 @@ const requestBooking = async (req, res, next) => {
       student: student._id,
       hostel: hostelId,
       roomNumber,
-      moveInDate: new Date(moveInDate),
-      checkOutDate: new Date(checkOutDate),
+      moveInDate: moveIn,
+      checkOutDate: checkOut,
       preferences: preferences || {}
     });
 
@@ -149,6 +158,7 @@ const requestBooking = async (req, res, next) => {
 const cancelBooking = async (req, res, next) => {
   try {
     const student = await Student.findOne({ userId: req.user.id });
+    if (!student) return res.status(404).json({ success: false, error: 'Student profile not found' });
     const booking = await HostelBooking.findOne({
       _id: req.params.bookingId,
       student: student._id
@@ -216,11 +226,25 @@ const updateBookingStatus = async (req, res, next) => {
       booking.allocatedBy = req.user.id;
       booking.allocatedAt = new Date();
 
-      // Add student to room occupants when checked in
+      // Add student to room occupants when checked in (capacity enforced,
+      // duplicates compared by id string since these are ObjectId instances)
       if (status === 'CHECKED_IN') {
         const hostel = await Hostel.findById(booking.hostel);
         const room = hostel?.rooms.find(r => r.number === booking.roomNumber);
-        if (room && !room.occupants.includes(booking.student)) {
+        if (!room) {
+          return res.status(400).json({ success: false, error: 'Booked room no longer exists' });
+        }
+        const elsewhere = (hostel.rooms || []).some((r) =>
+          r.number !== booking.roomNumber &&
+          (r.occupants || []).some((o) => o.toString() === booking.student.toString())
+        );
+        if (elsewhere) {
+          return res.status(400).json({ success: false, error: 'Student is already allocated to another room' });
+        }
+        if (!room.occupants.some(o => o.toString() === booking.student.toString())) {
+          if (room.occupants.length >= room.capacity) {
+            return res.status(400).json({ success: false, error: 'Room is fully occupied' });
+          }
           room.occupants.push(booking.student);
           await hostel.save();
         }
@@ -256,18 +280,35 @@ const allocateRoom = async (req, res, next) => {
   try {
     const { hostelId, roomNumber, studentId } = req.body;
 
+    const mongoose = require('mongoose');
+    if (!mongoose.Types.ObjectId.isValid(hostelId) || !mongoose.Types.ObjectId.isValid(studentId)) {
+      return res.status(400).json({ success: false, error: 'Valid hostelId and studentId are required' });
+    }
+
+    const student = await Student.findById(studentId);
+    if (!student) return res.status(404).json({ success: false, error: 'Student not found' });
+
     const hostel = await Hostel.findById(hostelId);
     if (!hostel) return res.status(404).json({ success: false, error: 'Hostel not found' });
 
     const room = hostel.rooms.find(r => r.number === roomNumber);
-    if (!room || room.occupants.length >= room.capacity) {
-      return res.status(400).json({ success: false, error: 'Room not available' });
+    if (!room) return res.status(404).json({ success: false, error: 'Room not found' });
+    const alreadyHere = room.occupants.some(o => o.toString() === studentId.toString());
+    if (alreadyHere) {
+      return res.status(400).json({ success: false, error: 'Student is already allocated to this room' });
+    }
+    const allocatedElsewhere = hostel.rooms.some((r) =>
+      r.number !== roomNumber && (r.occupants || []).some((o) => o.toString() === studentId.toString())
+    );
+    if (allocatedElsewhere) {
+      return res.status(400).json({ success: false, error: 'Student is already allocated to another room in this hostel' });
+    }
+    if (room.occupants.length >= room.capacity) {
+      return res.status(400).json({ success: false, error: 'Room is fully occupied' });
     }
 
-    if (!room.occupants.includes(studentId)) {
-      room.occupants.push(studentId);
-      await hostel.save();
-    }
+    room.occupants.push(studentId);
+    await hostel.save();
 
     res.status(200).json({ success: true, message: 'Room allocated successfully' });
   } catch (error) {
@@ -326,6 +367,162 @@ const getAdminStats = async (req, res, next) => {
   }
 };
 
+// ─── Admin: Hostel CRUD ───────────────────────────────────────────────────────
+
+// @route   GET /api/hostel/admin/hostels
+// @access  Private/Admin
+const getAllHostels = async (req, res, next) => {
+  try {
+    const hostels = await Hostel.find().sort({ name: 1 });
+    res.status(200).json({ success: true, count: hostels.length, data: hostels });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @route   POST /api/hostel/admin/hostels
+// @access  Private/Admin
+const createHostel = async (req, res, next) => {
+  try {
+    const { name, type, rooms = [], mess } = req.body;
+    if (!name || !type) {
+      return res.status(400).json({ success: false, error: 'name and type (BOYS/GIRLS) are required' });
+    }
+    if (type !== 'BOYS' && type !== 'GIRLS') {
+      return res.status(400).json({ success: false, error: 'type must be BOYS or GIRLS' });
+    }
+    const numbers = rooms.map((r) => r && r.number).filter(Boolean);
+    if (new Set(numbers).size !== numbers.length) {
+      return res.status(400).json({ success: false, error: 'Room numbers must be unique within a hostel' });
+    }
+    for (const room of rooms) {
+      if (!room.number || room.rent === undefined || room.rent === null) {
+        return res.status(400).json({ success: false, error: 'Each room needs number and rent' });
+      }
+      if (room.capacity !== undefined && (room.capacity < 1 || room.capacity > 10)) {
+        return res.status(400).json({ success: false, error: 'Room capacity must be between 1 and 10' });
+      }
+    }
+    const hostel = await Hostel.create({ name, type, rooms, mess });
+    res.status(201).json({ success: true, data: hostel });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @route   PUT /api/hostel/admin/hostels/:id
+// @access  Private/Admin
+const updateHostel = async (req, res, next) => {
+  try {
+    const hostel = await Hostel.findById(req.params.id);
+    if (!hostel) return res.status(404).json({ success: false, error: 'Hostel not found' });
+    const { name, type, mess } = req.body;
+    if (name !== undefined) hostel.name = name;
+    if (type !== undefined) {
+      if (type !== 'BOYS' && type !== 'GIRLS') {
+        return res.status(400).json({ success: false, error: 'type must be BOYS or GIRLS' });
+      }
+      hostel.type = type;
+    }
+    if (mess !== undefined) hostel.mess = mess;
+    await hostel.save();
+    res.status(200).json({ success: true, data: hostel });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @route   DELETE /api/hostel/admin/hostels/:id
+// @access  Private/Admin
+const deleteHostel = async (req, res, next) => {
+  try {
+    const hostel = await Hostel.findById(req.params.id);
+    if (!hostel) return res.status(404).json({ success: false, error: 'Hostel not found' });
+    if (hostel.rooms.some((r) => r.occupants.length > 0)) {
+      return res.status(400).json({ success: false, error: 'Cannot delete a hostel with occupied rooms' });
+    }
+    const activeBookings = await HostelBooking.countDocuments({
+      hostel: hostel._id,
+      status: { $in: ['PENDING', 'APPROVED', 'CHECKED_IN'] }
+    });
+    if (activeBookings > 0) {
+      return res.status(400).json({ success: false, error: 'Cannot delete a hostel with active bookings' });
+    }
+    await hostel.deleteOne();
+    res.status(200).json({ success: true, message: 'Hostel deleted successfully' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @route   POST /api/hostel/admin/hostels/:id/rooms
+// @access  Private/Admin
+const addRoom = async (req, res, next) => {
+  try {
+    const hostel = await Hostel.findById(req.params.id);
+    if (!hostel) return res.status(404).json({ success: false, error: 'Hostel not found' });
+    const { number, capacity = 2, rent, facilities = [] } = req.body;
+    if (!number || rent === undefined || rent === null) {
+      return res.status(400).json({ success: false, error: 'Room number and rent are required' });
+    }
+    if (hostel.rooms.some((r) => r.number === number)) {
+      return res.status(400).json({ success: false, error: 'Room number already exists in this hostel' });
+    }
+    if (capacity < 1 || capacity > 10) {
+      return res.status(400).json({ success: false, error: 'Room capacity must be between 1 and 10' });
+    }
+    hostel.rooms.push({ number, capacity, rent, facilities, occupants: [] });
+    await hostel.save();
+    res.status(201).json({ success: true, data: hostel });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @route   DELETE /api/hostel/admin/hostels/:id/rooms/:roomNumber
+// @access  Private/Admin
+const removeRoom = async (req, res, next) => {
+  try {
+    const hostel = await Hostel.findById(req.params.id);
+    if (!hostel) return res.status(404).json({ success: false, error: 'Hostel not found' });
+    const room = hostel.rooms.find((r) => r.number === req.params.roomNumber);
+    if (!room) return res.status(404).json({ success: false, error: 'Room not found' });
+    if (room.occupants.length > 0) {
+      return res.status(400).json({ success: false, error: 'Cannot remove an occupied room' });
+    }
+    hostel.rooms = hostel.rooms.filter((r) => r.number !== req.params.roomNumber);
+    await hostel.save();
+    res.status(200).json({ success: true, message: 'Room removed successfully' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @route   DELETE /api/hostel/allocate (ADMIN direct deallocation)
+// @access  Private/Admin
+const deallocateRoom = async (req, res, next) => {
+  try {
+    const { hostelId, roomNumber, studentId } = req.body;
+    const mongoose = require('mongoose');
+    if (!mongoose.Types.ObjectId.isValid(hostelId) || !mongoose.Types.ObjectId.isValid(studentId)) {
+      return res.status(400).json({ success: false, error: 'Valid hostelId and studentId are required' });
+    }
+    const hostel = await Hostel.findById(hostelId);
+    if (!hostel) return res.status(404).json({ success: false, error: 'Hostel not found' });
+    const room = hostel.rooms.find((r) => r.number === roomNumber);
+    if (!room) return res.status(404).json({ success: false, error: 'Room not found' });
+    const before = room.occupants.length;
+    room.occupants = room.occupants.filter((o) => o.toString() !== studentId.toString());
+    if (room.occupants.length === before) {
+      return res.status(404).json({ success: false, error: 'Student is not allocated to this room' });
+    }
+    await hostel.save();
+    res.status(200).json({ success: true, message: 'Student deallocated successfully' });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getAvailableRooms,
   getMyRoom,
@@ -334,5 +531,12 @@ module.exports = {
   getAllBookings,
   updateBookingStatus,
   allocateRoom,
-  getAdminStats
+  deallocateRoom,
+  getAdminStats,
+  getAllHostels,
+  createHostel,
+  updateHostel,
+  deleteHostel,
+  addRoom,
+  removeRoom
 };

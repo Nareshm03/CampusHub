@@ -6,10 +6,12 @@ import api from '../../../../lib/axios';
 import Button from '../../../../components/ui/Button';
 import Card from '../../../../components/ui/Card';
 import { LoadingSpinner } from '../../../../components/ui/Loading';
+import { toast } from 'sonner';
 
 export default function AcademicReports() {
   const [reports, setReports] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [departments, setDepartments] = useState([]);
   const [filters, setFilters] = useState({
     semester: 'all',
     department: 'all',
@@ -17,37 +19,65 @@ export default function AcademicReports() {
   });
 
   useEffect(() => {
+    fetchDepartments();
+  }, []);
+
+  useEffect(() => {
     fetchReports();
   }, [filters]);
+
+  const fetchDepartments = async () => {
+    try {
+      const response = await api.get('/departments');
+      setDepartments(response.data?.data || []);
+    } catch (error) {
+      console.error('Error fetching departments:', error);
+    }
+  };
 
   const fetchReports = async () => {
     setLoading(true);
     try {
-      const response = await api.get('/admin/reports/academic', { params: filters });
+      const response = await api.get('/admin/academic-reports', { params: filters });
       setReports(response.data.data);
     } catch (error) {
       console.error('Error fetching reports:', error);
+      toast.error(error.response?.data?.error || 'Failed to load academic reports');
     } finally {
       setLoading(false);
     }
   };
 
-  const exportReport = async (type) => {
+  const toCsvCell = (value) => {
+    const text = value === null || value === undefined ? '' : String(value);
+    return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  };
+
+  const exportReport = () => {
+    const rows = reports?.detailedData || [];
+    if (rows.length === 0) {
+      toast.error('No report data to export');
+      return;
+    }
     try {
-      const response = await api.get(`/admin/reports/export/${type}`, {
-        params: filters,
-        responseType: 'blob'
+      const headers = ['usn', 'studentName', 'subject', 'subjectCode', 'examType', 'examName', 'marks', 'maxMarks', 'percentage'];
+      const lines = [headers.join(',')];
+      rows.forEach((row) => {
+        lines.push(headers.map((h) => toCsvCell(row[h])).join(','));
       });
-      
-      const url = window.URL.createObjectURL(new Blob([response.data]));
+
+      const url = window.URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv' }));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `${type}_report_${new Date().toISOString().split('T')[0]}.pdf`);
+      link.setAttribute('download', `academic_report_${new Date().toISOString().split('T')[0]}.csv`);
       document.body.appendChild(link);
       link.click();
       link.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success('Report exported successfully');
     } catch (error) {
       console.error('Export failed:', error);
+      toast.error('Export failed');
     }
   };
 
@@ -57,9 +87,9 @@ export default function AcademicReports() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-semibold">Academic Reports</h1>
-        <Button variant="secondary" onClick={() => exportReport('performance')}>
+        <Button variant="secondary" onClick={() => exportReport()}>
           <DocumentArrowDownIcon className="w-4 h-4 mr-2" />
-          Export PDF
+          Export CSV
         </Button>
       </div>
 
@@ -87,9 +117,9 @@ export default function AcademicReports() {
             className="input"
           >
             <option value="all">All Departments</option>
-            <option value="CSE">Computer Science</option>
-            <option value="ECE">Electronics</option>
-            <option value="ME">Mechanical</option>
+            {departments.map((dept) => (
+              <option key={dept._id} value={dept._id}>{dept.name}</option>
+            ))}
           </select>
           
           <select

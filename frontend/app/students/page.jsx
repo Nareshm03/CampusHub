@@ -41,7 +41,7 @@ export default function StudentsPage() {
     }
 
     try {
-      await api.delete(`/api/admin/users/${studentId}`);
+      await api.delete(`/admin/users/${studentId}`);
       toast.success('Student deleted successfully');
       fetchStudents();
     } catch (error) {
@@ -53,7 +53,7 @@ export default function StudentsPage() {
   const fetchStudents = async () => {
     try {
       setLoading(true);
-      const response = await api.get('/api/students');
+      const response = await api.get('/students');
       console.log('Students API response:', response.data);
       const studentsData = response.data.data || response.data || [];
       setStudents(studentsData);

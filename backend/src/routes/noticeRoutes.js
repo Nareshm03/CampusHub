@@ -1,6 +1,7 @@
 const express = require('express');
 const {
   createNotice,
+  updateNotice,
   getNoticesForStudent,
   getNoticesForFaculty,
   getAllNotices,
@@ -14,6 +15,7 @@ router.post('/', protect, authorize('ADMIN', 'FACULTY'), createNotice);
 router.get('/my', protect, authorize('STUDENT'), getNoticesForStudent);
 router.get('/faculty', protect, authorize('FACULTY', 'ADMIN'), getNoticesForFaculty);
 router.get('/', protect, authorize('ADMIN'), getAllNotices);
+router.put('/:id', protect, authorize('ADMIN'), updateNotice);
 router.delete('/:id', protect, authorize('ADMIN'), deleteNotice);
 
 module.exports = router;

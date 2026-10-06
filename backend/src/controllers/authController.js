@@ -1,4 +1,5 @@
 const User = require('../models/User');
+const Student = require('../models/Student');
 const { sendEmail } = require('../utils/sendEmail');
 const { passwordResetTemplate, emailVerificationTemplate } = require('../utils/authEmailTemplates');
 const crypto = require('crypto');
@@ -105,15 +106,41 @@ const login = async (req, res, next) => {
   }
 };
 
-// @desc    Get current logged in user
+// @desc    Get current logged in user (authoritative profile for AuthContext)
 // @route   GET /api/auth/me
 // @access  Private
 const getMe = async (req, res, next) => {
   try {
-    const user = await User.findById(req.user.id);
+    const user = await User.findById(req.user.id)
+      .select('-password -resetPasswordToken -resetPasswordExpire -emailVerificationToken -emailVerificationExpire -twoFactorSecret')
+      .populate('department', 'name')
+      .lean();
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    // Student-profile fields consumed by role-specific UI (semester display,
+    // USN badge, navbar photo). Sourced here so AuthContext stays the single
+    // consumer-facing source; no extra frontend calls needed.
+    let studentExtras = {};
+    if (user.role === 'STUDENT') {
+      const profile = await Student.findOne({ userId: user._id }).select('usn semester profilePhoto').lean();
+      if (profile) {
+        studentExtras = {
+          usn: profile.usn,
+          semester: profile.semester,
+          profilePhoto: profile.profilePhoto || undefined
+        };
+      }
+    }
+
     res.status(200).json({
       success: true,
-      data: user
+      data: {
+        ...user,
+        id: user._id,
+        ...studentExtras
+      }
     });
   } catch (error) {
     next(error);

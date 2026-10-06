@@ -1,5 +1,6 @@
 const Company = require('../models/Company');
 const multer = require('multer');
+const mongoose = require('mongoose');
 const path = require('path');
 const fs = require('fs').promises;
 
@@ -89,6 +90,9 @@ exports.getAllCompanies = async (req, res) => {
 exports.getCompanyById = async (req, res) => {
   try {
     const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: 'Invalid company ID format' });
+    }
 
     const company = await Company.findById(id)
       .populate('preferredDepartments', 'name')
@@ -148,14 +152,20 @@ exports.createCompany = [
         message: 'Company created successfully',
         data: company
       });
-    } catch (error) {
-      console.error('Create company error:', error);
-      res.status(500).json({
+  } catch (error) {
+    console.error('Create company error:', error);
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({
         success: false,
-        message: 'Error creating company',
-        error: error.message
+        error: Object.values(error.errors).map((e) => e.message).join(', ')
       });
     }
+    res.status(500).json({
+      success: false,
+      message: 'Error creating company',
+      error: error.message
+    });
+  }
   }
 ];
 
@@ -163,8 +173,11 @@ exports.createCompany = [
 exports.updateCompany = async (req, res) => {
   try {
     const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: 'Invalid company ID format' });
+    }
 
-    const company = await Company.findByIdAndUpdate(id, req.body, { new: true })
+    const company = await Company.findByIdAndUpdate(id, req.body, { new: true, runValidators: true })
       .populate('preferredDepartments', 'name');
 
     if (!company) {
@@ -181,6 +194,12 @@ exports.updateCompany = async (req, res) => {
     });
   } catch (error) {
     console.error('Update company error:', error);
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({
+        success: false,
+        error: Object.values(error.errors).map((e) => e.message).join(', ')
+      });
+    }
     res.status(500).json({
       success: false,
       message: 'Error updating company',
@@ -193,6 +212,9 @@ exports.updateCompany = async (req, res) => {
 exports.deleteCompany = async (req, res) => {
   try {
     const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: 'Invalid company ID format' });
+    }
 
     const company = await Company.findByIdAndDelete(id);
 
@@ -232,6 +254,9 @@ exports.addCampusVisit = async (req, res) => {
   try {
     const { id } = req.params;
     const visitData = req.body;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: 'Invalid company ID format' });
+    }
 
     const company = await Company.findById(id);
 

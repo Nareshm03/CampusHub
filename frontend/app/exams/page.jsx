@@ -11,6 +11,7 @@ export default function ExamsPage() {
   const [registrations, setRegistrations] = useState([]);
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState('');
   const [pagination, setPagination] = useState({ current: 1, total: 1 });
   const [filters, setFilters] = useState({ semester: '', department: '' });
   const router = useRouter();
@@ -22,14 +23,16 @@ export default function ExamsPage() {
   const fetchData = async () => {
     try {
       setLoading(true);
+      setFetchError('');
       const promises = [];
-      
+
       if (activeTab === 'register') {
         const params = new URLSearchParams({
-          page: pagination.current,
-          limit: 10,
-          ...filters
+          page: String(pagination.current),
+          limit: '10',
         });
+        if (filters.semester) params.set('semester', filters.semester);
+        if (filters.department) params.set('department', filters.department);
         promises.push(axios.get(`/exams/available?${params}`));
       }
       
@@ -55,7 +58,9 @@ export default function ExamsPage() {
       }
     } catch (error) {
       console.error('Error fetching data:', error);
-      toast.error(error.response?.data?.message || 'Failed to fetch data');
+      const message = error.response?.data?.message || error.response?.data?.error || 'Failed to fetch data';
+      setFetchError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -77,7 +82,7 @@ export default function ExamsPage() {
       toast.success('Payment successful!');
       fetchData();
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Payment failed!');
+      toast.error(error.response?.data?.message || error.response?.data?.error || 'Payment failed!');
     }
   };
 
@@ -90,7 +95,7 @@ export default function ExamsPage() {
       toast.success('Revaluation requested successfully!');
       fetchData();
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to request revaluation!');
+      toast.error(error.response?.data?.message || error.response?.data?.error || 'Failed to request revaluation!');
     }
   };
 
@@ -167,6 +172,13 @@ export default function ExamsPage() {
             </div>
           </div>
           
+          {fetchError ? (
+            <div className="text-center py-12 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-red-600 font-medium">Failed to load exams</p>
+              <p className="text-red-500 text-sm mt-1">{fetchError}</p>
+              <button onClick={fetchData} className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">Retry</button>
+            </div>
+          ) : (
           <div className="grid gap-6">
             {exams.length === 0 ? (
               <div className="text-center py-12 bg-gray-50 rounded-lg">
@@ -178,7 +190,7 @@ export default function ExamsPage() {
                   <div className="flex justify-between items-start mb-4">
                     <div>
                       <h3 className="text-xl font-semibold text-gray-900">{exam.title}</h3>
-                      <p className="text-gray-600">Subject: {exam.subject?.name} ({exam.subject?.code})</p>
+                      <p className="text-gray-600">Subject: {exam.subject?.name} ({exam.subject?.subjectCode || exam.subject?.code || '—'})</p>
                     </div>
                     <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-medium">
                       {exam.isExternal ? 'External' : 'Internal'}
@@ -214,12 +226,19 @@ export default function ExamsPage() {
               ))
             )}
           </div>
+          )}
         </div>
       )}
 
       {activeTab === 'registrations' && (
         <div className="space-y-6">
-          {registrations.length === 0 ? (
+          {fetchError ? (
+            <div className="text-center py-12 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-red-600 font-medium">Failed to load registrations</p>
+              <p className="text-red-500 text-sm mt-1">{fetchError}</p>
+              <button onClick={fetchData} className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">Retry</button>
+            </div>
+          ) : registrations.length === 0 ? (
             <div className="text-center py-12 bg-gray-50 rounded-lg">
               <p className="text-gray-500">No exam registrations found</p>
             </div>
@@ -237,7 +256,7 @@ export default function ExamsPage() {
                       reg.status === 'fee_pending' ? 'bg-yellow-100 text-yellow-800' :
                       'bg-gray-100 text-gray-800'
                     }`}>
-                      {reg.status.replace('_', ' ').toUpperCase()}
+                      {(reg.status || 'unknown').replace('_', ' ').toUpperCase()}
                     </span>
                   </div>
                 </div>
@@ -246,7 +265,7 @@ export default function ExamsPage() {
                   <div>
                     <span className="font-medium">Fee Status:</span>
                     <p className={reg.feeStatus === 'paid' ? 'text-green-600' : 'text-red-600'}>
-                      {reg.feeStatus.toUpperCase()}
+                      {(reg.feeStatus || 'unknown').toUpperCase()}
                     </p>
                   </div>
                   {reg.hallTicketNumber && (
@@ -257,7 +276,7 @@ export default function ExamsPage() {
                   )}
                   <div>
                     <span className="font-medium">Exam Date:</span>
-                    <p className="text-gray-600">{new Date(reg.exam?.examDate).toLocaleDateString()}</p>
+                    <p className="text-gray-600">{reg.exam?.examDate ? new Date(reg.exam.examDate).toLocaleDateString() : '—'}</p>
                   </div>
                 </div>
                 
@@ -288,7 +307,13 @@ export default function ExamsPage() {
 
       {activeTab === 'results' && (
         <div className="space-y-6">
-          {results.length === 0 ? (
+          {fetchError ? (
+            <div className="text-center py-12 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-red-600 font-medium">Failed to load results</p>
+              <p className="text-red-500 text-sm mt-1">{fetchError}</p>
+              <button onClick={fetchData} className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">Retry</button>
+            </div>
+          ) : results.length === 0 ? (
             <div className="text-center py-12 bg-gray-50 rounded-lg">
               <p className="text-gray-500">No exam results available</p>
             </div>
@@ -298,14 +323,14 @@ export default function ExamsPage() {
                 <div className="flex justify-between items-start mb-4">
                   <div>
                     <h3 className="text-xl font-semibold">{result.exam?.title}</h3>
-                    <p className="text-gray-600">Exam Date: {new Date(result.exam?.examDate).toLocaleDateString()}</p>
+                    <p className="text-gray-600">Exam Date: {result.exam?.examDate ? new Date(result.exam.examDate).toLocaleDateString() : '—'}</p>
                   </div>
                   <span className={`px-3 py-1 rounded-full text-sm font-medium ${
                     result.status === 'pass' ? 'bg-green-100 text-green-800' :
                     result.status === 'fail' ? 'bg-red-100 text-red-800' :
                     'bg-gray-100 text-gray-800'
                   }`}>
-                    {result.status.toUpperCase()}
+                    {(result.status || 'unknown').toUpperCase()}
                   </span>
                 </div>
                 
@@ -320,7 +345,7 @@ export default function ExamsPage() {
                   </div>
                   <div>
                     <span className="font-medium text-gray-700">Revaluation:</span>
-                    <p className="text-gray-600">{result.revaluationStatus.replace('_', ' ').toUpperCase()}</p>
+                    <p className="text-gray-600">{(result.revaluationStatus || 'none').replace('_', ' ').toUpperCase()}</p>
                   </div>
                   {result.revaluationMarks && (
                     <div>

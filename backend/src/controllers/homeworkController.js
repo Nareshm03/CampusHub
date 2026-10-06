@@ -209,7 +209,7 @@ exports.updateHomework = async (req, res) => {
     }
 
     // Check if user is the faculty who created it
-    if (homework.faculty.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    if (homework.faculty.toString() !== req.user._id.toString() && req.user.role !== 'ADMIN') {
       return res.status(403).json({
         success: false,
         message: 'Not authorized to update this homework'
@@ -254,7 +254,7 @@ exports.deleteHomework = async (req, res) => {
       });
     }
 
-    if (homework.faculty.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    if (homework.faculty.toString() !== req.user._id.toString() && req.user.role !== 'ADMIN') {
       return res.status(403).json({
         success: false,
         message: 'Not authorized to delete this homework'
@@ -452,7 +452,7 @@ exports.gradeSubmission = async (req, res) => {
     }
 
     // Verify faculty authorization
-    if (submission.homework.faculty.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    if (submission.homework.faculty.toString() !== req.user._id.toString() && req.user.role !== 'ADMIN') {
       return res.status(403).json({
         success: false,
         message: 'Not authorized to grade this submission'

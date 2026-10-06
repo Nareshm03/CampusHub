@@ -33,7 +33,7 @@ export default function HomeworkDetailPage() {
 
   const fetchHomework = async () => {
     try {
-      const response = await axios.get(`/api/homework/${id}`);
+      const response = await axios.get(`/homework/${id}`);
       setHomework(response.data.data);
     } catch (err) {
       setError('Failed to fetch homework details');
@@ -44,7 +44,7 @@ export default function HomeworkDetailPage() {
 
   const fetchMySubmission = async () => {
     try {
-      const response = await axios.get('/api/homework/submissions/my-submissions');
+      const response = await axios.get('/homework/submissions/my-submissions');
       const mySubmission = response.data.data.find(
         sub => sub.homework._id === id
       );
@@ -100,7 +100,7 @@ export default function HomeworkDetailPage() {
       });
 
       const response = await axios.post(
-        `/api/homework/${id}/submit`,
+        `/homework/${id}/submit`,
         formData,
         { headers: { 'Content-Type': 'multipart/form-data' } }
       );
@@ -364,7 +364,7 @@ export default function HomeworkDetailPage() {
       )}
 
       {/* Submission Form */}
-      {canSubmit() && user?.role === 'student' && (
+      {canSubmit() && user?.role === 'STUDENT' && (
         <Card>
           <CardHeader>
             <CardTitle>
@@ -431,7 +431,7 @@ export default function HomeworkDetailPage() {
         </Card>
       )}
 
-      {!canSubmit() && user?.role === 'student' && !submission && (
+      {!canSubmit() && user?.role === 'STUDENT' && !submission && (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>

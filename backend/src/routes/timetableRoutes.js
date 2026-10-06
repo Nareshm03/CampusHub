@@ -34,11 +34,9 @@ const validateCreateTimetable = [
   handleValidationErrors
 ];
 
-// BUG FIX: route roles must match the role strings stored in User.role
-// auth.js authorize() checks req.user.role — Student model stores 'student' (lowercase)
-// but the original routes used 'ADMIN'/'STUDENT'/'FACULTY' (uppercase).
-// Align with whatever the User model actually stores. Based on auth.js adminOnly
-// checking 'ADMIN' and the User model, uppercase is correct — keep as-is.
+// NOTE: route roles must use the exact strings stored in User.role
+// (UPPERCASE: 'ADMIN' / 'FACULTY' / 'STUDENT' / 'PARENT') because
+// auth.js authorize() performs exact matching.
 router.post('/', protect, authorize('ADMIN'), validateCreateTimetable, createTimetable);
 router.get('/student', protect, authorize('STUDENT', 'FACULTY', 'ADMIN'), getStudentTimetable);
 router.get('/faculty', protect, authorize('FACULTY', 'ADMIN'), getFacultyTimetable);

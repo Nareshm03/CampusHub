@@ -3,10 +3,11 @@ import { useState, useEffect } from 'react';
 import ProtectedRoute from '../../../../components/ProtectedRoute';
 import Card from '../../../../components/ui/Card';
 import Button from '../../../../components/ui/Button';
-import { 
-  PlusIcon, 
-  TrashIcon, 
-  BellIcon, 
+import {
+  PlusIcon,
+  TrashIcon,
+  PencilIcon,
+  BellIcon,
   MegaphoneIcon,
   UserGroupIcon,
   AcademicCapIcon
@@ -19,6 +20,7 @@ export default function AdminNoticesPage() {
   const [departments, setDepartments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const [formData, setFormData] = useState({
     title: '',
     message: '',
@@ -54,11 +56,37 @@ export default function AdminNoticesPage() {
     }
   };
 
+  const resetForm = () => {
+    setShowModal(false);
+    setEditingId(null);
+    setFormData({
+      title: '',
+      message: '',
+      targetType: 'COLLEGE',
+      targetAudience: 'ALL',
+      department: '',
+      semester: ''
+    });
+  };
+
+  const startEdit = (notice) => {
+    setEditingId(notice._id);
+    setFormData({
+      title: notice.title || '',
+      message: notice.message || '',
+      targetType: notice.targetType || 'COLLEGE',
+      targetAudience: notice.targetAudience || 'ALL',
+      department: notice.department?._id || notice.department || '',
+      semester: notice.semester ?? ''
+    });
+    setShowModal(true);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
       const payload = { ...formData };
-      
+
       // Remove unnecessary fields based on targetType
       if (payload.targetType === 'COLLEGE') {
         delete payload.department;
@@ -70,21 +98,18 @@ export default function AdminNoticesPage() {
         payload.semester = parseInt(payload.semester);
       }
 
-      await api.post('/notices', payload);
-      toast.success('Notice created successfully');
-      setShowModal(false);
-      setFormData({
-        title: '',
-        message: '',
-        targetType: 'COLLEGE',
-        targetAudience: 'ALL',
-        department: '',
-        semester: ''
-      });
+      if (editingId) {
+        await api.put(`/notices/${editingId}`, payload);
+        toast.success('Notice updated successfully');
+      } else {
+        await api.post('/notices', payload);
+        toast.success('Notice created successfully');
+      }
+      resetForm();
       fetchNotices();
     } catch (error) {
-      console.error('Failed to create notice:', error);
-      toast.error(error.response?.data?.error || 'Failed to create notice');
+      console.error('Failed to save notice:', error);
+      toast.error(error.response?.data?.error || 'Failed to save notice');
     }
   };
 
@@ -229,12 +254,22 @@ export default function AdminNoticesPage() {
                         <span>{new Date(notice.createdAt).toLocaleDateString()} at {new Date(notice.createdAt).toLocaleTimeString()}</span>
                       </div>
                     </div>
+                    <div className="flex flex-col gap-1">
+                    <button
+                      onClick={() => startEdit(notice)}
+                      className="p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                      title="Edit notice"
+                    >
+                      <PencilIcon className="h-5 w-5" />
+                    </button>
                     <button
                       onClick={() => handleDelete(notice._id)}
                       className="p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                      title="Delete notice"
                     >
                       <TrashIcon className="h-5 w-5" />
                     </button>
+                    </div>
                   </div>
                 </div>
               </Card>
@@ -247,7 +282,7 @@ export default function AdminNoticesPage() {
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto">
               <div className="p-6">
-                <h2 className="text-2xl font-bold mb-4">Create Notice</h2>
+                <h2 className="text-2xl font-bold mb-4">{editingId ? 'Edit Notice' : 'Create Notice'}</h2>
                 <form onSubmit={handleSubmit}>
                   <div className="mb-4">
                     <label className="block text-sm font-medium mb-2">Title</label>
@@ -345,21 +380,11 @@ export default function AdminNoticesPage() {
                     <Button
                       type="button"
                       variant="outline"
-                      onClick={() => {
-                        setShowModal(false);
-                        setFormData({
-                          title: '',
-                          message: '',
-                          targetType: 'COLLEGE',
-                          targetAudience: 'ALL',
-                          department: '',
-                          semester: ''
-                        });
-                      }}
+                      onClick={resetForm}
                     >
                       Cancel
                     </Button>
-                    <Button type="submit">Create Notice</Button>
+                    <Button type="submit">{editingId ? 'Save Changes' : 'Create Notice'}</Button>
                   </div>
                 </form>
               </div>

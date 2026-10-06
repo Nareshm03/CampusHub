@@ -4,6 +4,7 @@ import { BellIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { BellIcon as BellSolidIcon } from '@heroicons/react/24/solid';
 import { toast } from 'sonner';
 import api from '../lib/axios';
+import { useSocket } from '../context/SocketContext';
 
 export default function NotificationDropdown() {
   const [notifications, setNotifications] = useState([]);
@@ -12,6 +13,7 @@ export default function NotificationDropdown() {
   const [loading, setLoading] = useState(false);
   const [hasNetworkError, setHasNetworkError] = useState(false);
   const intervalRef = useRef(null);
+  const { socket } = useSocket();
 
   useEffect(() => {
     fetchNotifications();
@@ -25,6 +27,22 @@ export default function NotificationDropdown() {
       }
     };
   }, [hasNetworkError]);
+
+  // Real-time delivery over the shared SocketProvider connection.
+  // Polling above remains as the fallback when the socket is unavailable.
+  useEffect(() => {
+    if (!socket) return;
+    const handler = (notification) => {
+      if (!notification || !notification._id) return;
+      setNotifications((prev) => {
+        if (prev.some((n) => n._id === notification._id)) return prev;
+        return [notification, ...prev].slice(0, 50);
+      });
+      setUnreadCount((prev) => prev + 1);
+    };
+    socket.on('new_notification', handler);
+    return () => socket.off('new_notification', handler);
+  }, [socket]);
 
   const fetchNotifications = async () => {
     try {
@@ -227,21 +245,6 @@ export default function NotificationDropdown() {
                 ))
               )}
             </div>
-
-            {notifications.length > 0 && (
-              <div className="p-3 border-t border-gray-200 dark:border-gray-700">
-                <button
-                  onClick={() => {
-                    setIsOpen(false);
-                    // Navigate to notifications page
-                    window.location.href = '/notifications';
-                  }}
-                  className="w-full text-center text-sm text-primary-600 hover:text-primary-700"
-                >
-                  View all notifications
-                </button>
-              </div>
-            )}
           </div>
         </>
       )}

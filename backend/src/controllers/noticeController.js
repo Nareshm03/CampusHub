@@ -106,6 +106,62 @@ const getAllNotices = async (req, res, next) => {
   }
 };
 
+// @desc    Update a notice
+// @route   PUT /api/notices/:id
+// @access  Private/Admin
+const updateNotice = async (req, res, next) => {
+  try {
+    const notice = await Notice.findById(req.params.id);
+
+    if (!notice) {
+      return res.status(404).json({
+        success: false,
+        error: 'Notice not found'
+      });
+    }
+
+    const { title, message, targetType, targetAudience, department, semester } = req.body;
+    const nextTargetType = targetType !== undefined ? targetType : notice.targetType;
+    const nextDepartment = department !== undefined ? department : notice.department;
+    const nextSemester = semester !== undefined ? semester : notice.semester;
+
+    // Same targeting rules as creation
+    if (nextTargetType === 'DEPARTMENT' && !nextDepartment) {
+      return res.status(400).json({
+        success: false,
+        error: 'Department is required for DEPARTMENT notices'
+      });
+    }
+
+    if (nextTargetType === 'SEMESTER' && !nextSemester) {
+      return res.status(400).json({
+        success: false,
+        error: 'Semester is required for SEMESTER notices'
+      });
+    }
+
+    if (title !== undefined) notice.title = title;
+    if (message !== undefined) notice.message = message;
+    if (targetType !== undefined) notice.targetType = targetType;
+    if (targetAudience !== undefined) notice.targetAudience = targetAudience;
+    if (department !== undefined) notice.department = department || undefined;
+    if (semester !== undefined) notice.semester = semester;
+
+    await notice.save();
+
+    const populatedNotice = await Notice.findById(notice._id)
+      .populate('createdBy', 'name')
+      .populate('department', 'name code');
+
+    res.status(200).json({
+      success: true,
+      data: populatedNotice
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // @desc    Delete a notice
 // @route   DELETE /api/notices/:id
 // @access  Private/Admin
@@ -162,6 +218,7 @@ const getNoticesForFaculty = async (req, res, next) => {
 
 module.exports = {
   createNotice,
+  updateNotice,
   getNoticesForStudent,
   getNoticesForFaculty,
   getAllNotices,

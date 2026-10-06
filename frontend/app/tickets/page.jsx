@@ -26,6 +26,11 @@ export default function TicketsPage() {
     category: 'it_support'
   });
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const [expandedId, setExpandedId] = useState(null);
+  const [replyText, setReplyText] = useState({});
+  const [replying, setReplying] = useState(false);
+  const [replyError, setReplyError] = useState('');
 
   useEffect(() => {
     fetchTickets();
@@ -33,13 +38,39 @@ export default function TicketsPage() {
 
   const fetchTickets = async () => {
     try {
+      setError('');
       const res = await api.get('/tickets/my');
       setTickets(res.data?.data || []);
     } catch (error) {
       console.error('Error fetching tickets:', error);
+      setError(error.response?.data?.error || 'Failed to load tickets');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleReply = async (ticketId) => {
+    const message = (replyText[ticketId] || '').trim();
+    if (!message) {
+      setReplyError('Reply message cannot be empty');
+      return;
+    }
+    setReplying(true);
+    setReplyError('');
+    try {
+      await api.post(`/tickets/${ticketId}/comments`, { message });
+      setReplyText((prev) => ({ ...prev, [ticketId]: '' }));
+      fetchTickets();
+    } catch (error) {
+      setReplyError(error.response?.data?.error || 'Failed to post reply');
+    } finally {
+      setReplying(false);
+    }
+  };
+
+  const toggleExpanded = (ticketId) => {
+    setExpandedId((prev) => (prev === ticketId ? null : ticketId));
+    setReplyError('');
   };
 
   const handleSubmit = async (e) => {
@@ -58,18 +89,25 @@ export default function TicketsPage() {
     }
   };
 
+  // Backend enums are lowercase (see Ticket model); Badge variants validated
+  // against components/ui/Badge.jsx.
   const statusColors = {
-    OPEN: 'warning',
-    IN_PROGRESS: 'info',
-    RESOLVED: 'success',
-    CLOSED: 'default'
+    open: 'warning',
+    in_progress: 'info',
+    resolved: 'success',
+    closed: 'default'
   };
 
   const priorityColors = {
-    LOW: 'default',
-    MEDIUM: 'warning',
-    HIGH: 'danger',
-    URGENT: 'danger'
+    low: 'default',
+    medium: 'warning',
+    high: 'danger',
+    urgent: 'danger'
+  };
+
+  const humanize = (value) => {
+    if (!value) return 'Unknown';
+    return value.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
   };
 
   return (
@@ -96,6 +134,14 @@ export default function TicketsPage() {
 
         {/* Tickets List */}
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }}>
+          {error && (
+            <Card className="p-4 mb-4 border-red-200 bg-red-50">
+              <p className="text-sm text-red-700">{error}</p>
+              <button onClick={() => { setError(''); setLoading(true); fetchTickets(); }} className="mt-2 text-sm text-red-700 underline">
+                Try again
+              </button>
+            </Card>
+          )}
           {loading ? (
             <div className="space-y-4">
               {[...Array(3)].map((_, i) => (
@@ -127,10 +173,10 @@ export default function TicketsPage() {
                     <div className="flex-1">
                       <div className="flex items-center gap-3 mb-2">
                         <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                          {ticket.subject}
+                          {ticket.title}
                         </h3>
-                        <Badge variant={statusColors[ticket.status]}>{ticket.status}</Badge>
-                        <Badge variant={priorityColors[ticket.priority]}>{ticket.priority}</Badge>
+                        <Badge variant={statusColors[ticket.status] || 'default'}>{humanize(ticket.status)}</Badge>
+                        <Badge variant={priorityColors[ticket.priority] || 'default'}>{humanize(ticket.priority)}</Badge>
                       </div>
                       <p className="text-gray-600 dark:text-gray-400 text-sm mb-3">
                         {ticket.description}
@@ -141,7 +187,49 @@ export default function TicketsPage() {
                           {new Date(ticket.createdAt).toLocaleDateString()}
                         </span>
                         <span>Category: {ticket.category}</span>
+                        <button
+                          onClick={() => toggleExpanded(ticket._id)}
+                          className="text-primary-600 hover:text-primary-700 font-medium"
+                        >
+                          {expandedId === ticket._id ? 'Hide replies' : `Replies (${(ticket.comments || []).length})`}
+                        </button>
                       </div>
+                      {expandedId === ticket._id && (
+                        <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+                          {(ticket.comments || []).length === 0 ? (
+                            <p className="text-xs text-gray-500 mb-2">No replies yet.</p>
+                          ) : (
+                            <div className="space-y-2 mb-3">
+                              {ticket.comments.map((comment, idx) => (
+                                <div key={comment._id || idx} className="text-sm bg-gray-50 dark:bg-gray-800 rounded p-2">
+                                  <span className="font-medium">{comment.user?.name || 'Unknown'}: </span>
+                                  <span className="text-gray-600 dark:text-gray-400">{comment.message}</span>
+                                  <span className="text-xs text-gray-400 ml-2">
+                                    {comment.timestamp ? new Date(comment.timestamp).toLocaleString() : ''}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {replyError && <p className="text-xs text-red-600 mb-2">{replyError}</p>}
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              value={replyText[ticket._id] || ''}
+                              onChange={(e) => setReplyText((prev) => ({ ...prev, [ticket._id]: e.target.value }))}
+                              placeholder="Write a reply..."
+                              className="flex-1 px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                            />
+                            <button
+                              onClick={() => handleReply(ticket._id)}
+                              disabled={replying}
+                              className="px-3 py-1.5 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
+                            >
+                              {replying ? 'Sending...' : 'Reply'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </Card>

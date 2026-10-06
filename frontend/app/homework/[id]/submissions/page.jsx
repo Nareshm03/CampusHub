@@ -41,7 +41,7 @@ export default function SubmissionsPage() {
 
   const fetchHomework = async () => {
     try {
-      const response = await axios.get(`/api/homework/${id}`);
+      const response = await axios.get(`/homework/${id}`);
       setHomework(response.data.data);
     } catch (err) {
       setError('Failed to fetch homework details');
@@ -50,7 +50,7 @@ export default function SubmissionsPage() {
 
   const fetchSubmissions = async () => {
     try {
-      const response = await axios.get(`/api/homework/${id}/submissions`);
+      const response = await axios.get(`/homework/${id}/submissions`);
       setSubmissions(response.data.data);
     } catch (err) {
       setError('Failed to fetch submissions');
@@ -67,7 +67,7 @@ export default function SubmissionsPage() {
 
     try {
       await axios.post(
-        `/api/homework/submissions/${selectedSubmission._id}/grade`,
+        `/homework/submissions/${selectedSubmission._id}/grade`,
         gradeData
       );
 
@@ -89,7 +89,7 @@ export default function SubmissionsPage() {
 
     try {
       const response = await axios.post(
-        `/api/homework/submissions/${submissionId}/plagiarism-check`
+        `/homework/submissions/${submissionId}/plagiarism-check`
       );
 
       setSuccess(
@@ -326,7 +326,7 @@ export default function SubmissionsPage() {
                           <Button 
                             size="sm" 
                             variant="ghost"
-                            onClick={() => window.open(`/api/homework/submissions/${selectedSubmission._id}/download/${index}`, '_blank')}
+                            onClick={() => window.open(`${axios.defaults.baseURL}/homework/submissions/${selectedSubmission._id}/download/${index}`, '_blank')}
                           >
                             <Download className="h-3 w-3" />
                           </Button>

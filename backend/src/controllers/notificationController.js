@@ -15,6 +15,15 @@ const createNotification = async (req, res, next) => {
       });
     }
 
+    const mongoose = require('mongoose');
+    const invalid = recipients.filter((id) => !mongoose.Types.ObjectId.isValid(id));
+    if (invalid.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'All recipient IDs must be valid user IDs'
+      });
+    }
+
     const notifications = [];
     
     for (const recipientId of recipients) {
@@ -28,6 +37,13 @@ const createNotification = async (req, res, next) => {
         data
       });
       notifications.push(notification);
+
+      // Real-time delivery to the recipient's personal room (best-effort:
+      // the record above is the source of truth if the socket is down).
+      try {
+        const { getIO } = require('../config/socket');
+        getIO().to(recipientId.toString()).emit('new_notification', notification);
+      } catch (_) {}
     }
 
     res.status(201).json({

@@ -1,9 +1,17 @@
+require('dotenv').config();
 const mongoose = require('mongoose');
 const User = require('./src/models/User');
 const Student = require('./src/models/Student');
 
+// Connection string must come from the environment — never hardcode credentials.
+const MONGO_URI = process.env.MONGODB_URI || process.env.DEV_MONGODB_URI;
+if (!MONGO_URI) {
+  console.error('Set MONGODB_URI env var to the target database connection string.');
+  process.exit(1);
+}
+
 // Connect to MongoDB
-mongoose.connect('mongodb+srv://nareshmurthy080_db_user:wCO0hi3827r6I17O@databasetest.peyxbzx.mongodb.net/campushub_dev?retryWrites=true&w=majority&appName=Databasetest');
+mongoose.connect(MONGO_URI);
 
 async function fixStudentLogin() {
   try {

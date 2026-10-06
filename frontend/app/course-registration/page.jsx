@@ -91,12 +91,8 @@ export default function CourseRegistration() {
     try {
       const { data } = await axios.post('/courses/register', { courseIds: selectedCourses });
       toast.success(`${data.data.registeredCourses} course(s) registered successfully!`);
-      // Redirect to first enrolled course detail
-      if (selectedCourses.length === 1) {
-        router.push(`/courses/${selectedCourses[0]}`);
-      } else {
-        router.push('/dashboard/student');
-      }
+      // No /courses/:id detail route exists — land on the student dashboard
+      router.push('/dashboard/student');
     } catch (err) {
       toast.error(err.response?.data?.error || 'Registration failed');
     } finally {

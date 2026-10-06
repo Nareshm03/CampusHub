@@ -1,4 +1,8 @@
 require('dotenv').config();
+
+// Fail fast on insecure/missing production config before anything else loads.
+require('./config/validateEnv').enforceProductionEnv();
+
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -39,8 +43,10 @@ app.use(requestLogger);
 // Enhanced CORS configuration - MUST be before other middleware
 const corsOptions = {
   origin: function (origin, callback) {
+    // In production ALLOWED_ORIGINS is required (see validateEnv); an empty
+    // list denies browser origins by default. Localhost list is dev-only.
     const allowedOrigins = process.env.NODE_ENV === 'production'
-      ? process.env.ALLOWED_ORIGINS?.split(',') || ['https://yourdomain.com']
+      ? (process.env.ALLOWED_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean)
       : ['http://localhost:3000', 'http://localhost:3001', 'http://127.0.0.1:3000', 'http://127.0.0.1:3001'];
     
     // Allow requests with no origin (like mobile apps or curl requests)
@@ -63,7 +69,14 @@ app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 
 // Body parsing middleware
-app.use(express.json({ limit: '10mb' }));
+// NOTE: the Stripe webhook needs the raw request body for signature
+// verification, so it is excluded here — feeRoutes applies express.raw()
+// on that exact path instead. Parsing it as JSON first would break
+// every webhook signature check.
+app.use((req, res, next) => {
+  if (req.originalUrl === '/api/v1/fees/webhook') return next();
+  express.json({ limit: '10mb' })(req, res, next);
+});
 app.use(express.urlencoded({ extended: false, limit: '10mb' }));
 
 // Security middleware

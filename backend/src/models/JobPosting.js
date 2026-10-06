@@ -201,9 +201,12 @@ jobPostingSchema.virtual('selectedCount').get(function() {
 // Check if student is eligible
 jobPostingSchema.methods.isStudentEligible = function(student) {
   const { departments, semesters, minimumCGPA, maxBacklogs, graduationYear } = this.eligibility;
+  // Compare by id string: sides may be ObjectIds or populated documents.
+  const idOf = (v) => (v && v._id ? v._id.toString() : v.toString());
+  const studentDept = student.department ? idOf(student.department) : undefined;
   
   // Check department
-  if (departments.length > 0 && !departments.some(dept => dept.toString() === student.department.toString())) {
+  if (departments.length > 0 && !departments.some(dept => idOf(dept) === studentDept)) {
     return { eligible: false, reason: 'Department not eligible' };
   }
   

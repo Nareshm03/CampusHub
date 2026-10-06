@@ -7,6 +7,7 @@ import axios from '@/lib/axios';
 export default function HallTicketPage() {
   const [hallTicket, setHallTicket] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState('');
   const params = useParams();
 
   useEffect(() => {
@@ -15,10 +16,14 @@ export default function HallTicketPage() {
 
   const fetchHallTicket = async () => {
     try {
-      const response = await axios.get(`/api/exams/hall-ticket/${params.id}`);
-      setHallTicket(response.data.hallTicket);
+      setFetchError('');
+      const response = await axios.get(`/exams/hall-ticket/${params.id}`);
+      setHallTicket(response.data.hallTicket || null);
     } catch (error) {
       console.error('Error fetching hall ticket:', error);
+      const status = error.response?.status;
+      const message = error.response?.data?.message || error.response?.data?.error || 'Failed to load hall ticket.';
+      setFetchError(status === 403 ? 'You are not authorized to view this hall ticket.' : status === 404 ? 'Hall ticket not found.' : status === 400 ? message : message);
     } finally {
       setLoading(false);
     }
@@ -43,8 +48,20 @@ export default function HallTicketPage() {
     alert('Download feature requires html2pdf.js library');
   };
 
-  if (loading) return <div className="p-6">Loading...</div>;
-  if (!hallTicket) return <div className="p-6">Hall ticket not found</div>;
+  if (loading) return <div className="p-6"><div className="animate-pulse space-y-4 max-w-4xl mx-auto"><div className="h-8 bg-gray-200 rounded w-1/3"></div><div className="h-64 bg-gray-200 rounded"></div></div></div>;
+  if (!hallTicket) return (
+    <div className="p-6 max-w-2xl mx-auto">
+      <div className="text-center py-12 bg-gray-50 border rounded-lg">
+        <p className="text-gray-700 font-medium">Hall ticket unavailable</p>
+        <p className="text-gray-500 text-sm mt-1">{fetchError || 'Hall ticket not found. It is issued only after registration is confirmed and fees are paid.'}</p>
+        <button onClick={fetchHallTicket} className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Retry</button>
+      </div>
+    </div>
+  );
+
+  const studentName = hallTicket.formData?.personalDetails?.name || hallTicket.student?.userId?.name || '—';
+  const studentEmail = hallTicket.formData?.personalDetails?.email || hallTicket.student?.userId?.email || '—';
+  const studentPhone = hallTicket.formData?.personalDetails?.phone || '—';
 
   return (
     <div className="p-6">
@@ -76,20 +93,20 @@ export default function HallTicketPage() {
           <div>
             <h3 className="text-lg font-semibold mb-4 border-b border-gray-300 pb-2">Student Details</h3>
             <div className="space-y-2">
-              <p><span className="font-semibold">Name:</span> {hallTicket.formData?.personalDetails?.name}</p>
-              <p><span className="font-semibold">USN:</span> {hallTicket.student?.usn}</p>
-              <p><span className="font-semibold">Email:</span> {hallTicket.student?.userId?.email}</p>
-              <p><span className="font-semibold">Phone:</span> {hallTicket.formData?.personalDetails?.phone}</p>
+              <p><span className="font-semibold">Name:</span> {studentName}</p>
+              <p><span className="font-semibold">USN:</span> {hallTicket.student?.usn || hallTicket.formData?.personalDetails?.usn || '—'}</p>
+              <p><span className="font-semibold">Email:</span> {studentEmail}</p>
+              <p><span className="font-semibold">Phone:</span> {studentPhone}</p>
             </div>
           </div>
 
           <div>
             <h3 className="text-lg font-semibold mb-4 border-b border-gray-300 pb-2">Exam Details</h3>
             <div className="space-y-2">
-              <p><span className="font-semibold">Exam:</span> {hallTicket.exam?.title}</p>
-              <p><span className="font-semibold">Date:</span> {new Date(hallTicket.exam?.examDate).toLocaleDateString()}</p>
-              <p><span className="font-semibold">Time:</span> {hallTicket.exam?.duration} minutes</p>
-              <p><span className="font-semibold">Venue:</span> {hallTicket.exam?.venue}</p>
+              <p><span className="font-semibold">Exam:</span> {hallTicket.exam?.title || '—'}</p>
+              <p><span className="font-semibold">Date:</span> {hallTicket.exam?.examDate ? new Date(hallTicket.exam.examDate).toLocaleDateString() : '—'}</p>
+              <p><span className="font-semibold">Time:</span> {hallTicket.exam?.duration ? `${hallTicket.exam.duration} minutes` : '—'}</p>
+              <p><span className="font-semibold">Venue:</span> {hallTicket.exam?.venue || '—'}</p>
             </div>
           </div>
         </div>

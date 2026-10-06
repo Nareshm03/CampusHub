@@ -89,8 +89,10 @@ export default function AttendancePage() {
     try {
       const response = await api.get(`/attendance?subjectId=${selectedSubject}&date=${selectedDate}`);
       const existingAttendance = {};
+      // getAttendance populates `student` (not `studentId`)
       response.data.data?.forEach(record => {
-        existingAttendance[record.studentId._id] = record.status;
+        const key = record.student?._id || record.student;
+        if (key) existingAttendance[key] = record.status;
       });
       setAttendance(prev => ({ ...prev, ...existingAttendance }));
     } catch (error) {

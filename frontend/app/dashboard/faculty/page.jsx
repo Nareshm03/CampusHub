@@ -50,6 +50,7 @@ export default function FacultyDashboard() {
   const [recentActivities, setRecentActivities] = useState({ recentHomeworks: [], recentGradings: [] });
   const [facultyName, setFacultyName] = useState('Faculty');
   const [loading, setLoading] = useState(true);
+  const [analyticsError, setAnalyticsError] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
 
   const getGreeting = () => {
@@ -64,7 +65,10 @@ export default function FacultyDashboard() {
   const fetchFacultyData = async () => {
     try {
       const [analyticsRes, leavesRes, noticesRes] = await Promise.all([
-        api.get('/faculty-analytics/dashboard').catch(() => ({ data: { data: null } })),
+        api.get('/faculty-analytics/dashboard').catch(() => {
+          setAnalyticsError(true);
+          return { data: { data: null } };
+        }),
         api.get('/leaves/pending').catch(() => ({ data: { data: [] } })),
         api.get('/notices').catch(() => ({ data: { data: [] } }))
       ]);
@@ -164,6 +168,11 @@ export default function FacultyDashboard() {
             </div>
           </div>
           <p className="text-gray-600 dark:text-gray-400">Welcome back to your CampusHub dashboard. Manage your classes, students, and academic activities.</p>
+          {analyticsError && (
+            <div className="mt-4 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200 rounded-lg text-sm">
+              Teaching analytics failed to load. Other sections below are unaffected.
+            </div>
+          )}
 
           {/* Quick Stats */}
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mt-6">

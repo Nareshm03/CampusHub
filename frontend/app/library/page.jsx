@@ -12,7 +12,7 @@ import { BookOpen, Search, AlertCircle, CheckCircle, Plus, Library } from 'lucid
 
 export default function LibraryPage() {
   const { user } = useAuth();
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = user?.role === 'ADMIN';
 
   const [myBooks, setMyBooks] = useState([]);
   const [catalog, setCatalog] = useState([]);
@@ -20,6 +20,8 @@ export default function LibraryPage() {
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('');
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [editingBook, setEditingBook] = useState(null);
 
   // Issue form state
   const [issueForm, setIssueForm] = useState({ bookId: '', studentId: '', dueDate: '' });
@@ -39,7 +41,8 @@ export default function LibraryPage() {
     try {
       const res = await axios.get('/library/my-books');
       setMyBooks(res.data.data);
-    } catch {
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to load your issued books');
       setMyBooks([]);
     } finally {
       setLoading(false);
@@ -53,7 +56,8 @@ export default function LibraryPage() {
       if (cat) params.category = cat;
       const res = await axios.get('/library/books', { params });
       setCatalog(res.data.data.books);
-    } catch {
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to load book catalog');
       setCatalog([]);
     }
   };
@@ -62,7 +66,8 @@ export default function LibraryPage() {
     try {
       const res = await axios.get('/library/issued');
       setIssuedBooks(res.data.data);
-    } catch {
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to load issued books');
       setIssuedBooks([]);
     }
   };
@@ -111,6 +116,45 @@ export default function LibraryPage() {
     }
   };
 
+  const handleDeleteBook = async (id) => {
+    if (!window.confirm('Delete this book from the catalog? Only books without active loans can be deleted.')) return;
+    try {
+      await axios.delete(`/library/books/${id}`);
+      fetchCatalog();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to delete book');
+    }
+  };
+
+  const handleUpdateBook = async (e) => {
+    e.preventDefault();
+    if (!editingBook) return;
+    try {
+      await axios.put(`/library/books/${editingBook.id}`, {
+        title: editingBook.title,
+        author: editingBook.author,
+        isbn: editingBook.isbn || undefined,
+        category: editingBook.category || undefined,
+        totalCopies: Number(editingBook.totalCopies),
+      });
+      setEditingBook(null);
+      fetchCatalog();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to update book');
+    }
+  };
+
+  const startEditBook = (item) => {
+    setEditingBook({
+      id: item._id,
+      title: item.book.title || '',
+      author: item.book.author || '',
+      isbn: item.book.isbn || '',
+      category: item.book.category || '',
+      totalCopies: item.book.totalCopies || 1,
+    });
+  };
+
   const getDaysInfo = (dueDate) => {
     const days = Math.ceil((new Date(dueDate) - new Date()) / (1000 * 60 * 60 * 24));
     return days;
@@ -132,6 +176,18 @@ export default function LibraryPage() {
           </Button>
         </Link>
       </div>
+
+      {error && (
+        <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded text-sm flex items-center justify-between">
+          <span>{error}</span>
+          <button
+            onClick={() => { setError(''); setLoading(true); fetchMyBooks(); fetchCatalog(search, category); if (isAdmin) fetchIssuedBooks(); }}
+            className="underline ml-4"
+          >
+            Try again
+          </button>
+        </div>
+      )}
 
       <Tabs defaultValue={isAdmin ? 'admin' : 'my-books'}>
         <TabsList>
@@ -228,6 +284,22 @@ export default function LibraryPage() {
                     {item.book.description && (
                       <p className="text-gray-600 line-clamp-2">{item.book.description}</p>
                     )}
+                    {isAdmin && (
+                      <div className="flex gap-2 pt-2">
+                        <button
+                          onClick={() => startEditBook(item)}
+                          className="text-xs text-blue-600 hover:underline"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => handleDeleteBook(item._id)}
+                          className="text-xs text-red-600 hover:underline"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               ))}
@@ -300,9 +372,9 @@ export default function LibraryPage() {
                             <tr key={idx} className="border-b last:border-0">
                               <td className="py-2 pr-4 font-medium">{item.bookTitle}</td>
                               <td className="py-2 pr-4">
-                                {item.transaction.student?.name || item.transaction.student}
-                                {item.transaction.student?.rollNumber && (
-                                  <span className="text-gray-500 ml-1">({item.transaction.student.rollNumber})</span>
+                                {item.transaction.student?.userId?.name || 'Unknown'}
+                                {item.transaction.student?.usn && (
+                                  <span className="text-gray-500 ml-1">({item.transaction.student.usn})</span>
                                 )}
                               </td>
                               <td className="py-2 pr-4">{new Date(item.transaction.issueDate).toLocaleDateString()}</td>
@@ -388,6 +460,60 @@ export default function LibraryPage() {
           </TabsContent>
         )}
       </Tabs>
+
+      {editingBook && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg w-full max-w-md p-6">
+            <h2 className="text-xl font-bold mb-4">Edit Book</h2>
+            <form
+              onSubmit={handleUpdateBook}
+              className="space-y-3"
+            >
+              <input
+                placeholder="Title *"
+                value={editingBook.title}
+                onChange={(e) => setEditingBook({ ...editingBook, title: e.target.value })}
+                className="w-full border rounded-md px-3 py-2 text-sm"
+                required
+              />
+              <input
+                placeholder="Author *"
+                value={editingBook.author}
+                onChange={(e) => setEditingBook({ ...editingBook, author: e.target.value })}
+                className="w-full border rounded-md px-3 py-2 text-sm"
+                required
+              />
+              <input
+                placeholder="ISBN"
+                value={editingBook.isbn}
+                onChange={(e) => setEditingBook({ ...editingBook, isbn: e.target.value })}
+                className="w-full border rounded-md px-3 py-2 text-sm"
+              />
+              <input
+                placeholder="Category"
+                value={editingBook.category}
+                onChange={(e) => setEditingBook({ ...editingBook, category: e.target.value })}
+                className="w-full border rounded-md px-3 py-2 text-sm"
+              />
+              <input
+                type="number"
+                min={1}
+                placeholder="Total Copies"
+                value={editingBook.totalCopies}
+                onChange={(e) => setEditingBook({ ...editingBook, totalCopies: e.target.value })}
+                className="w-full border rounded-md px-3 py-2 text-sm"
+                required
+              />
+              <div className="flex gap-2 justify-end">
+                <Button type="button" variant="outline" onClick={() => setEditingBook(null)}>
+                  Cancel
+                </Button>
+                <Button type="submit">Save Changes</Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

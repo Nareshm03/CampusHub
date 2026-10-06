@@ -1,18 +1,66 @@
 const Student = require('../models/Student');
 const Attendance = require('../models/Attendance');
 const Marks = require('../models/Marks');
+const mongoose = require('mongoose');
+
+const isUsableFilterValue = (v) => v !== undefined && v !== null && v !== '' && v !== 'all' && v !== 'undefined' && v !== 'null';
+
+// Build a safe student-scope filter. Faculty callers are restricted to their
+// own department; admins may scope freely. Returns { filter } or sends the
+// error response and returns null.
+const buildStudentFilter = (req, res) => {
+  const { department, semester } = req.query;
+  const studentFilter = {};
+
+  if (req.user.role === 'FACULTY') {
+    if (!req.user.department) {
+      res.status(403).json({ success: false, error: 'Faculty department scope unavailable' });
+      return null;
+    }
+    if (isUsableFilterValue(department) && department.toString() !== req.user.department.toString()) {
+      res.status(403).json({ success: false, error: 'Access denied. You can only view your department.' });
+      return null;
+    }
+    studentFilter.department = req.user.department;
+  } else if (isUsableFilterValue(department)) {
+    if (!mongoose.Types.ObjectId.isValid(department)) {
+      res.status(400).json({ success: false, error: 'Invalid department ID' });
+      return null;
+    }
+    studentFilter.department = department;
+  }
+
+  if (isUsableFilterValue(semester)) {
+    const sem = parseInt(semester, 10);
+    if (!Number.isInteger(sem) || sem < 1 || sem > 8) {
+      res.status(400).json({ success: false, error: 'Invalid semester filter' });
+      return null;
+    }
+    studentFilter.semester = sem;
+  }
+
+  return { filter: studentFilter };
+};
+
+// Application grading rule (matches CSV import grading).
+const gradeForPercentage = (pct) => {
+  if (pct >= 90) return 'O';
+  if (pct >= 80) return 'A+';
+  if (pct >= 70) return 'A';
+  if (pct >= 60) return 'B+';
+  if (pct >= 50) return 'B';
+  if (pct >= 40) return 'C';
+  return 'F';
+};
 
 // @desc    Get attendance report
 // @route   GET /api/reports/attendance
 // @access  Private/Admin
 const getAttendanceReport = async (req, res, next) => {
   try {
-    const { department, semester } = req.query;
-    
-    // Build filter
-    const studentFilter = {};
-    if (department) studentFilter.department = department;
-    if (semester) studentFilter.semester = parseInt(semester);
+    const built = buildStudentFilter(req, res);
+    if (!built) return;
+    const studentFilter = built.filter;
     
     // Get all students
     const students = await Student.find(studentFilter)
@@ -79,12 +127,14 @@ const getAttendanceReport = async (req, res, next) => {
 // @access  Private/Admin
 const getMarksReport = async (req, res, next) => {
   try {
-    const { department, semester, subject } = req.query;
-    
-    // Build filter
-    const studentFilter = {};
-    if (department) studentFilter.department = department;
-    if (semester) studentFilter.semester = parseInt(semester);
+    const { subject } = req.query;
+    const built = buildStudentFilter(req, res);
+    if (!built) return;
+    const studentFilter = built.filter;
+
+    if (isUsableFilterValue(subject) && !mongoose.Types.ObjectId.isValid(subject)) {
+      return res.status(400).json({ success: false, error: 'Invalid subject ID' });
+    }
     
     // Get all students
     const students = await Student.find(studentFilter)
@@ -99,15 +149,15 @@ const getMarksReport = async (req, res, next) => {
       const oneYearAgo = new Date();
       oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
       
-      const marksFilter = { 
+      const marksFilter = {
         student: student._id,
         createdAt: { $gte: oneYearAgo }
       };
-      if (subject) marksFilter.subject = subject;
-      
+      if (isUsableFilterValue(subject)) marksFilter.subject = subject;
+
       // Get all marks for this student
       const marksRecords = await Marks.find(marksFilter)
-        .populate('subject', 'name code')
+        .populate('subject', 'name subjectCode')
         .lean();
       
       if (marksRecords.length === 0) {
@@ -154,13 +204,7 @@ const getMarksReport = async (req, res, next) => {
           ? (data.obtainedMarks / data.totalMarks) * 100 
           : 0;
         
-        let grade = 'F';
-        if (percentage >= 90) grade = 'A+';
-        else if (percentage >= 80) grade = 'A';
-        else if (percentage >= 70) grade = 'B+';
-        else if (percentage >= 60) grade = 'B';
-        else if (percentage >= 50) grade = 'C';
-        else if (percentage >= 40) grade = 'D';
+        const grade = gradeForPercentage(percentage);
         
         marksData.push({
           studentId: student._id,

@@ -186,7 +186,7 @@ export default function DigitalLibraryPage() {
           <p className="text-gray-600">Access e-books, journals, and research materials</p>
         </div>
         
-        {(user?.role === 'faculty' || user?.role === 'admin') && (
+        {(user?.role === 'FACULTY' || user?.role === 'ADMIN') && (
           <Link href="/library/upload">
             <Button>
               <Book className="mr-2" size={18} />

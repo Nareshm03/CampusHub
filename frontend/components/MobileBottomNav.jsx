@@ -8,7 +8,8 @@ import {
   DocumentTextIcon,
   CalendarIcon,
   ClipboardDocumentCheckIcon,
-  Squares2X2Icon
+  Squares2X2Icon,
+  BriefcaseIcon
 } from '@heroicons/react/24/outline';
 import { 
   HomeIcon as HomeSolidIcon, 
@@ -16,7 +17,8 @@ import {
   DocumentTextIcon as DocumentSolidIcon,
   CalendarIcon as CalendarSolidIcon,
   ClipboardDocumentCheckIcon as ClipboardSolidIcon,
-  Squares2X2Icon as SquaresSolidIcon
+  Squares2X2Icon as SquaresSolidIcon,
+  BriefcaseIcon as BriefcaseSolidIcon
 } from '@heroicons/react/24/solid';
 
 export default function MobileBottomNav() {
@@ -33,6 +35,7 @@ export default function MobileBottomNav() {
         base,
         { href: '/attendance', label: 'Attendance', icon: CalendarIcon, activeIcon: CalendarSolidIcon },
         { href: '/exams', label: 'Exams', icon: DocumentTextIcon, activeIcon: DocumentSolidIcon },
+        { href: '/placement/dashboard', label: 'Jobs', icon: BriefcaseIcon, activeIcon: BriefcaseSolidIcon },
         { href: '/profile', label: 'Profile', icon: UserCircleIcon, activeIcon: UserSolidIcon },
       ];
     }
@@ -41,6 +44,7 @@ export default function MobileBottomNav() {
         base,
         { href: '/dashboard/faculty/attendance', label: 'Attendance', icon: CalendarIcon, activeIcon: CalendarSolidIcon },
         { href: '/marks', label: 'Marks', icon: ClipboardDocumentCheckIcon, activeIcon: ClipboardSolidIcon },
+        { href: '/placement/manage', label: 'Jobs', icon: BriefcaseIcon, activeIcon: BriefcaseSolidIcon },
         { href: '/profile', label: 'Profile', icon: UserCircleIcon, activeIcon: UserSolidIcon },
       ];
     }

@@ -1,6 +1,12 @@
 const JobPosting = require('../models/JobPosting');
 const Company = require('../models/Company');
 const User = require('../models/User');
+const mongoose = require('mongoose');
+const Student = require('../models/Student');
+const Marks = require('../models/Marks');
+const Attendance = require('../models/Attendance');
+const Assignment = require('../models/Assignment');
+const AssignmentSubmission = require('../models/AssignmentSubmission');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs').promises;
@@ -64,10 +70,14 @@ exports.getAllJobs = async (req, res) => {
       query.$text = { $search: search };
     }
 
-    // For students, filter by eligibility
-    if (req.user.role === 'student') {
-      query['eligibility.departments'] = { $in: [req.user.department] };
-      query['eligibility.semesters'] = { $in: [req.user.semester] };
+    // For students, scope to their own department/semester via their
+    // Student profile (academic fields live on Student, not User).
+    if (req.user.role === 'STUDENT') {
+      const profile = await Student.findOne({ userId: req.user._id });
+      if (profile) {
+        query['eligibility.departments'] = { $in: [profile.department] };
+        query['eligibility.semesters'] = { $in: [profile.semester] };
+      }
       query.applicationDeadline = { $gte: new Date() };
     }
 
@@ -110,6 +120,9 @@ exports.getAllJobs = async (req, res) => {
 exports.getJobById = async (req, res) => {
   try {
     const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: 'Invalid job ID format' });
+    }
 
     const job = await JobPosting.findById(id)
       .populate('company')
@@ -127,18 +140,19 @@ exports.getJobById = async (req, res) => {
     job.incrementViews();
     await job.save();
 
-    // Check if student has applied and eligibility
+    // Check if student has applied and eligibility (academic context
+    // comes from the Student profile, not the User document)
     let userApplication = null;
     let eligibility = null;
 
-    if (req.user.role === 'student') {
+    if (req.user.role === 'STUDENT') {
       userApplication = job.getStudentApplication(req.user._id);
-      eligibility = job.isStudentEligible(req.user);
+      eligibility = job.isStudentEligible(await buildEligibilityContext(req.user));
     }
 
     // Remove other students' applications from response
     const jobData = job.toObject();
-    if (req.user.role === 'student') {
+    if (req.user.role === 'STUDENT') {
       delete jobData.applications;
     }
 
@@ -179,6 +193,12 @@ exports.createJob = async (req, res) => {
     });
   } catch (error) {
     console.error('Create job error:', error);
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({
+        success: false,
+        error: Object.values(error.errors).map((e) => e.message).join(', ')
+      });
+    }
     res.status(500).json({
       success: false,
       message: 'Error creating job',
@@ -197,12 +217,23 @@ exports.applyForJob = [
   async (req, res) => {
     try {
       const { id } = req.params;
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).json({ success: false, message: 'Invalid job ID format' });
+      }
       const job = await JobPosting.findById(id);
 
       if (!job) {
         return res.status(404).json({
           success: false,
           message: 'Job not found'
+        });
+      }
+
+      // Only published jobs accept applications
+      if (job.status !== 'Published') {
+        return res.status(400).json({
+          success: false,
+          message: 'Applications are closed for this job'
         });
       }
 
@@ -214,8 +245,8 @@ exports.applyForJob = [
         });
       }
 
-      // Check eligibility
-      const eligibility = job.isStudentEligible(req.user);
+      // Check eligibility against the Student profile
+      const eligibility = job.isStudentEligible(await buildEligibilityContext(req.user));
       if (!eligibility.eligible) {
         return res.status(403).json({
           success: false,
@@ -313,6 +344,9 @@ exports.getJobApplications = async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.query;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: 'Invalid job ID format' });
+    }
 
     const job = await JobPosting.findById(id)
       .populate('company', 'name logo')
@@ -367,6 +401,14 @@ exports.updateApplicationStatus = async (req, res) => {
   try {
     const { id, studentId } = req.params;
     const { status, notes, offerDetails } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: 'Invalid job ID format' });
+    }
+    const validStatuses = ['Pending', 'Shortlisted', 'Rejected', 'Interview Scheduled', 'Selected', 'Offer Extended', 'Offer Accepted', 'Offer Rejected'];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({ success: false, error: `Status must be one of: ${validStatuses.join(', ')}` });
+    }
 
     const job = await JobPosting.findById(id).populate('company', 'name');
 
@@ -450,6 +492,9 @@ exports.scheduleInterview = async (req, res) => {
   try {
     const { id, studentId } = req.params;
     const interviewData = req.body;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: 'Invalid job ID format' });
+    }
 
     const job = await JobPosting.findById(id);
 
@@ -583,8 +628,11 @@ exports.updateJob = async (req, res) => {
   try {
     const { id } = req.params;
     const updates = req.body;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: 'Invalid job ID format' });
+    }
 
-    const job = await JobPosting.findByIdAndUpdate(id, updates, { new: true })
+    const job = await JobPosting.findByIdAndUpdate(id, updates, { new: true, runValidators: true })
       .populate('company', 'name logo');
 
     if (!job) {
@@ -601,6 +649,12 @@ exports.updateJob = async (req, res) => {
     });
   } catch (error) {
     console.error('Update job error:', error);
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({
+        success: false,
+        error: Object.values(error.errors).map((e) => e.message).join(', ')
+      });
+    }
     res.status(500).json({
       success: false,
       message: 'Error updating job',
@@ -613,6 +667,9 @@ exports.updateJob = async (req, res) => {
 exports.deleteJob = async (req, res) => {
   try {
     const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: 'Invalid job ID format' });
+    }
 
     const job = await JobPosting.findByIdAndDelete(id);
 
@@ -634,5 +691,224 @@ exports.deleteJob = async (req, res) => {
       message: 'Error deleting job',
       error: error.message
     });
+  }
+};
+
+// ─── Readiness & skills (single /placements contract) ───────────────────────
+// All readiness figures are computed live from real academic + profile data:
+// CGPA (35%) from Marks rows, attendance (25%), assignment submissions (20%),
+// skills/certifications/projects on the Student profile (20%).
+
+// Resolve the Student profile for a User id.
+const resolveStudentProfile = async (userId) => {
+  return Student.findOne({ userId }).populate('department', 'name');
+};
+
+// Average percentage + 10-point CGPA from Marks rows (percentage / 9.5).
+const computeAcademicScore = async (studentId) => {
+  const rows = await Marks.find({ student: studentId });
+  let ratioSum = 0;
+  let counted = 0;
+  rows.forEach((m) => {
+    if (m.maxMarks > 0 && m.marks >= 0) {
+      ratioSum += m.marks / m.maxMarks;
+      counted += 1;
+    }
+  });
+  if (counted === 0) return { cgpa: 0, percentage: 0, count: 0 };
+  const percentage = (ratioSum / counted) * 100;
+  return {
+    cgpa: Math.round(Math.min(10, percentage / 9.5) * 100) / 100,
+    percentage: Math.round(percentage * 100) / 100,
+    count: counted
+  };
+};
+
+// Eligibility context shaped like the profile fields isStudentEligible reads.
+// Academic fields live on the Student profile, not the User document.
+const buildEligibilityContext = async (user) => {
+  const profile = await Student.findOne({ userId: user._id });
+  const cgpa = profile ? (await computeAcademicScore(profile._id)).cgpa : 0;
+  return {
+    department: profile ? profile.department : user.department,
+    semester: profile ? profile.semester : undefined,
+    cgpa,
+    backlogs: 0,
+    graduationYear: profile ? profile.graduationYear : undefined
+  };
+};
+
+const levelForScore = (total) => {
+  if (total >= 85) return 'EXCELLENT';
+  if (total >= 70) return 'HIGH';
+  if (total >= 50) return 'MEDIUM';
+  return 'LOW';
+};
+
+const computeReadiness = async (profile) => {
+  const [academic, attendanceRows, assignments, submittedIds, publishedJobs] = await Promise.all([
+    computeAcademicScore(profile._id),
+    Attendance.find({ student: profile._id }).select('status'),
+    Assignment.find({ department: profile.department, semester: profile.semester }).select('_id'),
+    AssignmentSubmission.find({ student: profile._id }).distinct('assignment'),
+    JobPosting.find({ status: 'Published' }).populate('company', 'name')
+  ]);
+
+  const cgpaScore = academic.count > 0 ? Math.round(academic.cgpa * 10) : 0;
+  const present = attendanceRows.filter((a) => a.status === 'PRESENT').length;
+  const attendancePct = attendanceRows.length > 0 ? Math.round((present / attendanceRows.length) * 100) : 0;
+
+  const dueIds = assignments.map((a) => a._id.toString());
+  const submittedSet = new Set((submittedIds || []).map((id) => id.toString()));
+  const submitted = dueIds.filter((id) => submittedSet.has(id)).length;
+  const homeworkPct = dueIds.length > 0 ? Math.round((submitted / dueIds.length) * 100) : 100;
+
+  const skillCount =
+    (profile.skills || []).length +
+    (profile.certifications || []).length +
+    (profile.projects || []).length;
+  const skillsScore = Math.min(100, skillCount * 10);
+
+  const totalScore = Math.round(
+    cgpaScore * 0.35 + attendancePct * 0.25 + homeworkPct * 0.2 + skillsScore * 0.2
+  );
+
+  const ctx = {
+    department: profile.department,
+    semester: profile.semester,
+    cgpa: academic.cgpa,
+    backlogs: 0,
+    graduationYear: profile.graduationYear
+  };
+  const eligibleCompanies = [
+    ...new Set(
+      publishedJobs
+        .filter((job) => {
+          try {
+            return job.isStudentEligible(ctx).eligible;
+          } catch (err) {
+            return false;
+          }
+        })
+        .map((job) => job.company && job.company.name)
+        .filter(Boolean)
+    )
+  ];
+
+  return {
+    totalScore,
+    level: levelForScore(totalScore),
+    scores: {
+      cgpa: { value: academic.count > 0 ? academic.cgpa : 'N/A', score: cgpaScore },
+      attendance: { value: attendancePct, score: attendancePct },
+      homework: { value: homeworkPct, score: homeworkPct },
+      skills: { value: skillCount, score: skillsScore }
+    },
+    eligibleCompanies
+  };
+};
+
+const sendOwnReadiness = async (req, res) => {
+  try {
+    const profile = await resolveStudentProfile(req.user._id);
+    if (!profile) {
+      return res.status(404).json({ success: false, message: 'Student profile not found' });
+    }
+    res.json({ success: true, data: await computeReadiness(profile) });
+  } catch (error) {
+    console.error('Get readiness error:', error);
+    res.status(500).json({ success: false, message: 'Error computing readiness', error: error.message });
+  }
+};
+
+// GET /placements/readiness/me (Student: own readiness, computed live)
+exports.getMyReadiness = sendOwnReadiness;
+
+// POST /placements/readiness/me/calculate (Student: recompute live score)
+exports.recalculateMyReadiness = sendOwnReadiness;
+
+// GET /placements/readiness/student/:studentId (Faculty/Admin; :studentId is a Student _id)
+exports.getStudentReadiness = async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.studentId)) {
+      return res.status(400).json({ success: false, message: 'Invalid student ID format' });
+    }
+    const profile = await Student.findById(req.params.studentId).populate('department', 'name');
+    if (!profile) {
+      return res.status(404).json({ success: false, message: 'Student profile not found' });
+    }
+    res.json({ success: true, data: await computeReadiness(profile) });
+  } catch (error) {
+    console.error('Get student readiness error:', error);
+    res.status(500).json({ success: false, message: 'Error computing readiness', error: error.message });
+  }
+};
+
+const shapeSkills = (profile) => ({
+  skills: profile.skills || [],
+  certifications: profile.certifications || [],
+  projects: profile.projects || []
+});
+
+// GET /placements/skills/me (Student: own skills profile)
+exports.getMySkills = async (req, res) => {
+  try {
+    const profile = await resolveStudentProfile(req.user._id);
+    if (!profile) {
+      return res.status(404).json({ success: false, message: 'Student profile not found' });
+    }
+    res.json({ success: true, data: shapeSkills(profile) });
+  } catch (error) {
+    console.error('Get skills error:', error);
+    res.status(500).json({ success: false, message: 'Error fetching skills', error: error.message });
+  }
+};
+
+// PUT /placements/skills/me (Student: replace own skills profile)
+exports.updateMySkills = async (req, res) => {
+  try {
+    const profile = await resolveStudentProfile(req.user._id);
+    if (!profile) {
+      return res.status(404).json({ success: false, message: 'Student profile not found' });
+    }
+    const { skills = [], certifications = [], projects = [] } = req.body || {};
+    if (!Array.isArray(skills) || !Array.isArray(certifications) || !Array.isArray(projects)) {
+      return res.status(400).json({ success: false, message: 'skills, certifications and projects must be arrays' });
+    }
+    profile.skills = skills.filter((s) => typeof s === 'string').map((s) => s.trim()).filter(Boolean).slice(0, 100);
+    profile.certifications = certifications
+      .filter((c) => c && typeof c.name === 'string' && typeof c.issuer === 'string')
+      .map((c) => ({ name: c.name.trim(), issuer: c.issuer.trim(), date: typeof c.date === 'string' ? c.date : '' }))
+      .slice(0, 50);
+    profile.projects = projects
+      .filter((p) => p && typeof p.name === 'string')
+      .map((p) => ({
+        name: p.name.trim(),
+        tech: Array.isArray(p.tech) ? p.tech.filter((t) => typeof t === 'string').map((t) => t.trim()).filter(Boolean).slice(0, 20) : [],
+        description: typeof p.description === 'string' ? p.description : ''
+      }))
+      .slice(0, 50);
+    await profile.save();
+    res.json({ success: true, message: 'Skills updated successfully', data: shapeSkills(profile) });
+  } catch (error) {
+    console.error('Update skills error:', error);
+    res.status(500).json({ success: false, message: 'Error updating skills', error: error.message });
+  }
+};
+
+// GET /placements/skills/student/:studentId (Faculty/Admin; :studentId is a Student _id)
+exports.getStudentSkills = async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.studentId)) {
+      return res.status(400).json({ success: false, message: 'Invalid student ID format' });
+    }
+    const profile = await Student.findById(req.params.studentId);
+    if (!profile) {
+      return res.status(404).json({ success: false, message: 'Student profile not found' });
+    }
+    res.json({ success: true, data: shapeSkills(profile) });
+  } catch (error) {
+    console.error('Get student skills error:', error);
+    res.status(500).json({ success: false, message: 'Error fetching skills', error: error.message });
   }
 };

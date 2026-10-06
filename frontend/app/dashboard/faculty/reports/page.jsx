@@ -16,28 +16,16 @@ import Button from '../../../../components/ui/Button';
 import ProtectedRoute from '../../../../components/ProtectedRoute';
 import { toast } from 'sonner';
 
-const mockAttendanceData = [
-  { date: 'Week 1', attendance: 85 },
-  { date: 'Week 2', attendance: 78 },
-  { date: 'Week 3', attendance: 92 },
-  { date: 'Week 4', attendance: 88 },
-  { date: 'Week 5', attendance: 95 },
-  { date: 'Week 6', attendance: 82 }
-];
-
-const mockPerformanceData = [
-  { exam: 'Internal 1', average: 72 },
-  { exam: 'Internal 2', average: 75 },
-  { exam: 'Internal 3', average: 80 },
-  { exam: 'Assignment', average: 85 }
-];
-
 function ReportsContent() {
   const searchParams = useSearchParams();
   const [loading, setLoading] = useState(true);
+  const [reportLoading, setReportLoading] = useState(false);
   const [subjects, setSubjects] = useState([]);
   const [selectedSubject, setSelectedSubject] = useState(null);
   const [reportType, setReportType] = useState(searchParams.get('type') || 'attendance');
+  const [subjectDetails, setSubjectDetails] = useState(null);
+  const [consistency, setConsistency] = useState(null);
+  const [reportError, setReportError] = useState('');
 
   useEffect(() => {
     fetchSubjects();
@@ -64,25 +52,53 @@ function ReportsContent() {
 
   const fetchReportData = async () => {
     try {
-      await api.get(`/reports/${reportType}`, { params: { subjectId: selectedSubject } });
-    } catch {
-      // report endpoint may not exist yet — non-critical
+      setReportLoading(true);
+      setReportError('');
+      const [subjectRes, consistencyRes] = await Promise.all([
+        api.get(`/faculty-analytics/subject/${selectedSubject}`),
+        api.get('/faculty-analytics/attendance-consistency', { params: { subjectId: selectedSubject } })
+      ]);
+      setSubjectDetails(subjectRes.data?.data || null);
+      setConsistency(consistencyRes.data?.data || null);
+    } catch (error) {
+      console.error('Error fetching report data:', error);
+      const message = error.response?.data?.message || error.response?.data?.error || 'Failed to load report data';
+      setReportError(message);
+      toast.error(message);
+    } finally {
+      setReportLoading(false);
     }
   };
 
   const exportReport = async () => {
     try {
-      const res = await api.get(`/reports/${reportType}/export`, {
-        params: { subjectId: selectedSubject },
-        responseType: 'blob'
+      const lines = ['subject,metric,value'];
+      const subj = subjectDetails?.subject;
+      if (subj) {
+        lines.push(`"${subj.name}",code,"${subj.code || ''}"`);
+        lines.push(`"${subj.name}",semester,${subj.semester ?? ''}`);
+      }
+      (subjectDetails?.performanceDistribution || []).forEach((d) => {
+        lines.push(`"${subj?.name || 'subject'}",performance_${d.label},${d.count}`);
       });
-      const url = window.URL.createObjectURL(new Blob([res.data]));
+      (subjectDetails?.students || []).forEach((s) => {
+        lines.push(`"${s.student?.name || ''}",usn_${s.student?.usn || s.student?.rollNumber || ''},avg_${s.performance?.average ?? ''}_att_${s.attendance?.rate ?? ''}`);
+      });
+      (consistency?.monthlyTrends || []).forEach((t) => {
+        lines.push(`"${subj?.name || 'subject'}",attendance_${t.month},${Math.round(t.attendanceRate * 10) / 10}`);
+      });
+      if (lines.length <= 1) {
+        toast.error('No report data to export');
+        return;
+      }
+      const url = window.URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv' }));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `${reportType}_report_${new Date().toISOString().split('T')[0]}.pdf`);
+      link.setAttribute('download', `${reportType}_report_${new Date().toISOString().split('T')[0]}.csv`);
       document.body.appendChild(link);
       link.click();
       link.remove();
+      window.URL.revokeObjectURL(url);
       toast.success('Report exported successfully');
     } catch {
       toast.error('Failed to export report');
@@ -91,6 +107,33 @@ function ReportsContent() {
 
   const selectedSubjectData = subjects.find(s => s._id === selectedSubject);
   const pageTitle = reportType === 'attendance' ? 'Attendance Analytics' : 'Performance Reports';
+
+  const students = subjectDetails?.students || [];
+  const studentCount = students.length;
+  const avgAttendance = consistency?.overall?.averageAttendance
+    ?? (students.length > 0
+      ? students.reduce((s, x) => s + (x.attendance?.rate || 0), 0) / students.length
+      : 0);
+  const avgMarks = students.length > 0
+    ? students.reduce((s, x) => s + (x.performance?.average || 0), 0) / students.length
+    : 0;
+  const belowThreshold = students.filter((x) => (x.attendance?.rate ?? 100) < 75).length;
+  const topPerformer = students.length > 0
+    ? Math.max(...students.map((x) => x.performance?.average || 0))
+    : 0;
+
+  const attendanceTrendData = (consistency?.monthlyTrends || []).map((t) => ({
+    date: t.month,
+    attendance: Math.round(t.attendanceRate * 10) / 10
+  }));
+  const attendancePatternFallback = (subjectDetails?.attendancePatterns || []).map((p) => ({
+    date: new Date(p.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+    attendance: Math.round(p.attendanceRate * 10) / 10
+  }));
+  const performanceChartData = (subjectDetails?.performanceDistribution || []).map((d) => ({
+    exam: d.label,
+    average: d.count
+  }));
 
   return (
     <div className="container py-8 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -156,7 +199,7 @@ function ReportsContent() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-green-600 dark:text-green-400">Students</p>
-                <p className="text-2xl font-bold text-green-900 dark:text-green-100 mt-1">{selectedSubjectData.studentCount || 0}</p>
+                <p className="text-2xl font-bold text-green-900 dark:text-green-100 mt-1">{studentCount}</p>
               </div>
               <UserGroupIcon className="w-10 h-10 text-green-600" />
             </div>
@@ -165,7 +208,7 @@ function ReportsContent() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-purple-600 dark:text-purple-400">Avg Attendance</p>
-                <p className="text-2xl font-bold text-purple-900 dark:text-purple-100 mt-1">87%</p>
+                <p className="text-2xl font-bold text-purple-900 dark:text-purple-100 mt-1">{avgAttendance.toFixed(1)}%</p>
               </div>
               <ClockIcon className="w-10 h-10 text-purple-600" />
             </div>
@@ -174,7 +217,7 @@ function ReportsContent() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-orange-600 dark:text-orange-400">Avg Marks</p>
-                <p className="text-2xl font-bold text-orange-900 dark:text-orange-100 mt-1">76%</p>
+                <p className="text-2xl font-bold text-orange-900 dark:text-orange-100 mt-1">{avgMarks.toFixed(1)}%</p>
               </div>
               <ChartBarIcon className="w-10 h-10 text-orange-600" />
             </div>
@@ -182,13 +225,28 @@ function ReportsContent() {
         </div>
       )}
 
+      {/* Report status */}
+      {reportLoading && (
+        <Card className="p-6 text-center text-gray-500">Loading report data...</Card>
+      )}
+      {reportError && !reportLoading && (
+        <Card className="p-6 bg-red-50 dark:bg-red-900/20 border-red-200">
+          <div className="flex items-center justify-between">
+            <p className="text-red-800 dark:text-red-200">{reportError}</p>
+            <Button onClick={fetchReportData} variant="outline">Retry</Button>
+          </div>
+        </Card>
+      )}
+
       {/* Charts */}
+      {!reportLoading && !reportError && (attendanceTrendData.length > 0 || performanceChartData.length > 0 || students.length > 0) && (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {reportType === 'attendance' && (
+        {(reportType === 'attendance' || reportType === 'marks') && (
           <Card className="p-6 border-l-4 border-l-blue-600">
             <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-6">Attendance Trend</h3>
+            {(attendanceTrendData.length > 0 || attendancePatternFallback.length > 0) ? (
             <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={mockAttendanceData}>
+              <LineChart data={attendanceTrendData.length > 0 ? attendanceTrendData : attendancePatternFallback}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="date" />
                 <YAxis domain={[0, 100]} />
@@ -197,22 +255,29 @@ function ReportsContent() {
                 <Line type="monotone" dataKey="attendance" stroke="#3b82f6" strokeWidth={3} name="Attendance %" dot={{ fill: '#3b82f6', r: 5 }} />
               </LineChart>
             </ResponsiveContainer>
+            ) : (
+              <p className="text-gray-500 text-sm">No attendance trend data available.</p>
+            )}
           </Card>
         )}
 
-        {reportType === 'performance' && (
+        {(reportType === 'performance' || reportType === 'marks') && (
           <Card className="p-6 border-l-4 border-l-green-600">
             <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-6">Performance Analysis</h3>
+            {performanceChartData.length > 0 ? (
             <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={mockPerformanceData}>
+              <BarChart data={performanceChartData}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="exam" />
-                <YAxis domain={[0, 100]} />
+                <YAxis />
                 <Tooltip />
                 <Legend />
-                <Bar dataKey="average" fill="#10b981" name="Average Marks" radius={[8, 8, 0, 0]} />
+                <Bar dataKey="average" fill="#10b981" name="Students" radius={[8, 8, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
+            ) : (
+              <p className="text-gray-500 text-sm">No performance data available.</p>
+            )}
           </Card>
         )}
 
@@ -220,10 +285,10 @@ function ReportsContent() {
           <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-6">Report Summary</h3>
           <div className="space-y-4">
             {[
-              { label: 'Total Classes Conducted', value: '24', color: 'text-gray-900 dark:text-white' },
-              { label: 'Average Attendance', value: '87%', color: 'text-green-600' },
-              { label: 'Students Below 75%', value: '3', color: 'text-red-600' },
-              { label: 'Top Performer', value: '95%', color: 'text-blue-600' },
+              { label: 'Total Classes Conducted', value: String(consistency?.overall?.totalClasses ?? 0), color: 'text-gray-900 dark:text-white' },
+              { label: 'Average Attendance', value: `${avgAttendance.toFixed(1)}%`, color: 'text-green-600' },
+              { label: 'Students Below 75%', value: String(belowThreshold), color: 'text-red-600' },
+              { label: 'Top Performer', value: `${topPerformer.toFixed(1)}%`, color: 'text-blue-600' },
             ].map(({ label, value, color }) => (
               <div key={label} className="flex justify-between items-center p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
                 <span className="text-gray-700 dark:text-gray-300">{label}</span>
@@ -233,6 +298,12 @@ function ReportsContent() {
           </div>
         </Card>
       </div>
+      )}
+      {!reportLoading && !reportError && attendanceTrendData.length === 0 && performanceChartData.length === 0 && students.length === 0 && (
+        <Card className="p-12 text-center">
+          <p className="text-gray-500 text-lg">No report data available for this subject yet.</p>
+        </Card>
+      )}
     </div>
   );
 }

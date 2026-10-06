@@ -1,5 +1,14 @@
 const sessionTimeout = (timeoutMinutes = 30) => {
   return (req, res, next) => {
+    // Stateless JWT API requests carry their own expiry (enforced by the
+    // auth middleware via User.getSignedJwtToken + jwt.verify). The
+    // server-side session idle-timeout only governs cookie/session flows,
+    // so it must never invalidate a valid JWT with a 401 here.
+    const authHeader = req.headers.authorization || '';
+    if (authHeader.startsWith('Bearer ')) {
+      return next();
+    }
+
     if (req.session) {
       const now = Date.now();
       const lastActivity = req.session.lastActivity || now;

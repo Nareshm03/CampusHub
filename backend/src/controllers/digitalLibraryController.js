@@ -39,9 +39,23 @@ const upload = multer({
   }
 });
 
+// Wrap a multer single-file middleware so client-caused upload failures
+// (wrong type, too large) return 400 instead of falling through to a 500.
+const singleUpload = (middleware) => (req, res, next) => {
+  middleware(req, res, (err) => {
+    if (err) {
+      return res.status(400).json({
+        success: false,
+        message: err.message || 'File upload failed'
+      });
+    }
+    next();
+  });
+};
+
 // Upload digital book
 exports.uploadBook = [
-  upload.single('book'),
+  singleUpload(upload.single('book')),
   async (req, res) => {
     try {
       if (!req.file) {
@@ -104,7 +118,7 @@ exports.uploadBook = [
         edition,
         tags: tags ? (typeof tags === 'string' ? JSON.parse(tags) : tags) : [],
         uploadedBy: req.user._id,
-        status: req.user.role === 'admin' ? 'Active' : 'Pending Review'
+        status: req.user.role === 'ADMIN' ? 'Active' : 'Pending Review'
       });
 
       await book.save();
@@ -126,9 +140,8 @@ exports.uploadBook = [
 ];
 
 // Upload cover image
-exports.uploadCoverImage = [
-  multer({
-    storage: multer.diskStorage({
+const coverUpload = multer({
+  storage: multer.diskStorage({
       destination: async (req, file, cb) => {
         const uploadDir = path.join(__dirname, '../../uploads/book-covers');
         try {
@@ -154,7 +167,10 @@ exports.uploadCoverImage = [
       }
     },
     limits: { fileSize: 5 * 1024 * 1024 } // 5MB
-  }).single('cover'),
+  });
+
+exports.uploadCoverImage = [
+  singleUpload(coverUpload.single('cover')),
   async (req, res) => {
     try {
       const { bookId } = req.params;
@@ -168,7 +184,7 @@ exports.uploadCoverImage = [
       }
 
       // Check permission
-      if (book.uploadedBy.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+      if (book.uploadedBy.toString() !== req.user._id.toString() && req.user.role !== 'ADMIN') {
         return res.status(403).json({
           success: false,
           message: 'Not authorized to update this book'
@@ -297,10 +313,10 @@ exports.getBookById = async (req, res) => {
     book.incrementViews();
     await book.save();
 
-    // Get user-specific data
-    const userProgress = book.getUserProgress(req.user._id);
-    const userBookmarks = book.getUserBookmarks(req.user._id);
-    const userAnnotations = book.getUserAnnotations(req.user._id);
+    // Get user-specific data (null when absent so keys survive JSON serialization)
+    const userProgress = book.getUserProgress(req.user._id) || null;
+    const userBookmarks = book.getUserBookmarks(req.user._id) || [];
+    const userAnnotations = book.getUserAnnotations(req.user._id) || [];
 
     res.json({
       success: true,
@@ -436,7 +452,7 @@ exports.deleteBookmark = async (req, res) => {
       });
     }
 
-    bookmark.remove();
+    bookmark.deleteOne();
     await book.save();
 
     res.json({
@@ -523,7 +539,7 @@ exports.deleteAnnotation = async (req, res) => {
       });
     }
 
-    annotation.remove();
+    annotation.deleteOne();
     await book.save();
 
     res.json({
@@ -611,7 +627,7 @@ exports.downloadBook = async (req, res) => {
       });
     }
 
-    if (!book.allowDownload && req.user.role !== 'admin') {
+    if (!book.allowDownload && req.user.role !== 'ADMIN') {
       return res.status(403).json({
         success: false,
         message: 'Downloads are not allowed for this book'
@@ -658,7 +674,7 @@ exports.updateBook = async (req, res) => {
     }
 
     // Check permission
-    if (book.uploadedBy.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    if (book.uploadedBy.toString() !== req.user._id.toString() && req.user.role !== 'ADMIN') {
       return res.status(403).json({
         success: false,
         message: 'Not authorized to update this book'
@@ -712,7 +728,7 @@ exports.deleteBook = async (req, res) => {
     }
 
     // Only admin or uploader can delete
-    if (book.uploadedBy.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    if (book.uploadedBy.toString() !== req.user._id.toString() && req.user.role !== 'ADMIN') {
       return res.status(403).json({
         success: false,
         message: 'Not authorized to delete this book'
@@ -737,7 +753,7 @@ exports.deleteBook = async (req, res) => {
       }
     }
 
-    await book.remove();
+    await book.deleteOne();
 
     res.json({
       success: true,

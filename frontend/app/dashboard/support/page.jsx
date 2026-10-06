@@ -37,18 +37,24 @@ const SupportCard = ({ icon: Icon, title, description, href, color }) => (
 );
 
 const TicketItem = ({ ticket }) => {
+  // Backend enums are lowercase (see Ticket model)
   const statusColors = {
-    OPEN: 'warning',
-    IN_PROGRESS: 'info',
-    RESOLVED: 'success',
-    CLOSED: 'default'
+    open: 'warning',
+    in_progress: 'info',
+    resolved: 'success',
+    closed: 'default'
   };
 
   const priorityColors = {
-    LOW: 'default',
-    MEDIUM: 'warning',
-    HIGH: 'danger',
-    URGENT: 'danger'
+    low: 'default',
+    medium: 'warning',
+    high: 'danger',
+    urgent: 'danger'
+  };
+
+  const humanize = (value) => {
+    if (!value) return 'Unknown';
+    return value.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
   };
 
   return (
@@ -57,14 +63,14 @@ const TicketItem = ({ ticket }) => {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-              {ticket.subject}
+              {ticket.title}
             </p>
-            <Badge variant={priorityColors[ticket.priority]}>{ticket.priority}</Badge>
+            <Badge variant={priorityColors[ticket.priority] || 'default'}>{humanize(ticket.priority)}</Badge>
           </div>
           <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{ticket.description}</p>
         </div>
         <div className="flex items-center gap-3 ml-3 shrink-0">
-          <Badge variant={statusColors[ticket.status]}>{ticket.status}</Badge>
+          <Badge variant={statusColors[ticket.status] || 'default'}>{humanize(ticket.status)}</Badge>
           <span className="text-xs text-gray-500">
             {new Date(ticket.createdAt).toLocaleDateString()}
           </span>

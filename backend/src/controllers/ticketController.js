@@ -1,11 +1,16 @@
 const Ticket = require('../models/Ticket');
 
 const ticketController = {
-  // Create new ticket
+  // Create new ticket (any authenticated user; privileged fields are
+  // server-assigned and cannot be set by the client)
   createTicket: async (req, res) => {
     try {
+      const { title, description, category, priority } = req.body;
       const ticket = new Ticket({
-        ...req.body,
+        title,
+        description,
+        category,
+        priority,
         submittedBy: req.user.id
       });
       await ticket.save();
@@ -16,7 +21,7 @@ const ticketController = {
     }
   },
 
-  // Get all tickets (with filters)
+  // Get all tickets (ADMIN management view)
   getTickets: async (req, res) => {
     try {
       const { status, category, priority, page = 1, limit = 10 } = req.query;
@@ -28,6 +33,7 @@ const ticketController = {
       
       const tickets = await Ticket.find(filter)
         .populate('submittedBy assignedTo', 'name email')
+        .populate('comments.user', 'name')
         .sort({ createdAt: -1 })
         .limit(limit * 1)
         .skip((page - 1) * limit);
@@ -44,11 +50,12 @@ const ticketController = {
     }
   },
 
-  // Get user's tickets
+  // Get user's tickets (owner-scoped)
   getMyTickets: async (req, res) => {
     try {
       const tickets = await Ticket.find({ submittedBy: req.user.id })
         .populate('assignedTo', 'name email')
+        .populate('comments.user', 'name')
         .sort({ createdAt: -1 });
       res.json({ success: true, data: tickets });
     } catch (error) {
@@ -56,21 +63,32 @@ const ticketController = {
     }
   },
 
-  // Update ticket status
+  // Update ticket status (ADMIN any ticket; others only their own, no assignment)
   updateTicket: async (req, res) => {
     try {
       const { id } = req.params;
       const { status, assignedTo, response } = req.body;
 
-      const updates = { status };
+      const existing = await Ticket.findById(id);
+      if (!existing) return res.status(404).json({ success: false, message: 'Ticket not found' });
+
+      const isAdmin = req.user.role === 'ADMIN';
+      if (!isAdmin && existing.submittedBy.toString() !== req.user.id) {
+        return res.status(403).json({ success: false, message: 'Not authorized to update this ticket' });
+      }
+      if (assignedTo && !isAdmin) {
+        return res.status(403).json({ success: false, message: 'Only admins can assign tickets' });
+      }
+
+      const updates = {};
+      if (status !== undefined) updates.status = status;
       if (response) updates.resolution = response;
       if (assignedTo) updates.assignedTo = assignedTo;
-      if (status === 'resolved') updates.resolvedAt = new Date();
+      if (updates.status === 'resolved') updates.resolvedAt = new Date();
 
       const ticket = await Ticket.findByIdAndUpdate(id, updates, { new: true, runValidators: true })
-        .populate('submittedBy assignedTo', 'name email');
-
-      if (!ticket) return res.status(404).json({ success: false, message: 'Ticket not found' });
+        .populate('submittedBy assignedTo', 'name email')
+        .populate('comments.user', 'name');
 
       res.json({ success: true, data: ticket });
     } catch (error) {
@@ -78,19 +96,28 @@ const ticketController = {
     }
   },
 
-  // Add comment to ticket
+  // Add comment to ticket (ADMIN any ticket; others only their own)
   addComment: async (req, res) => {
     try {
       const { id } = req.params;
       const { message } = req.body;
+
+      if (!message || !String(message).trim()) {
+        return res.status(400).json({ success: false, message: 'Comment message is required' });
+      }
+
+      const existing = await Ticket.findById(id);
+      if (!existing) return res.status(404).json({ success: false, message: 'Ticket not found' });
+
+      if (req.user.role !== 'ADMIN' && existing.submittedBy.toString() !== req.user.id) {
+        return res.status(403).json({ success: false, message: 'Not authorized to comment on this ticket' });
+      }
+
+      existing.comments.push({ user: req.user.id, message: String(message).trim() });
+      await existing.save();
+      await existing.populate('comments.user submittedBy assignedTo', 'name email');
       
-      const ticket = await Ticket.findByIdAndUpdate(
-        id,
-        { $push: { comments: { user: req.user.id, message } } },
-        { new: true }
-      ).populate('comments.user submittedBy assignedTo', 'name email');
-      
-      res.json({ success: true, data: ticket });
+      res.json({ success: true, data: existing });
     } catch (error) {
       res.status(400).json({ success: false, message: error.message });
     }

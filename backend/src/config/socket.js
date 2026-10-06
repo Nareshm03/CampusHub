@@ -9,8 +9,10 @@ const initializeSocket = (server) => {
   io = new Server(server, {
     cors: {
       origin: function (origin, callback) {
+        // Production origins are required via ALLOWED_ORIGINS (see validateEnv);
+        // an empty list denies browser origins by default. Localhost is dev-only.
         const allowedOrigins = process.env.NODE_ENV === 'production'
-          ? process.env.ALLOWED_ORIGINS?.split(',') || ['https://yourdomain.com']
+          ? (process.env.ALLOWED_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean)
           : ['http://localhost:3000', 'http://localhost:3001', 'http://127.0.0.1:3000', 'http://127.0.0.1:3001'];
         
         if (!origin || allowedOrigins.includes(origin)) {
@@ -56,7 +58,10 @@ const initializeSocket = (server) => {
     socket.join(socket.userId);
 
     // Handle user joining a conversation
+    // The room always includes the verified socket.userId, so a client can
+    // only ever join rooms containing itself — never another user's room.
     socket.on('join_conversation', (otherUserId) => {
+      if (!otherUserId || typeof otherUserId !== 'string') return;
       const conversationId = Message.getConversationId(socket.userId, otherUserId);
       socket.join(conversationId);
       console.log(`User ${socket.userId} joined conversation ${conversationId}`);
@@ -64,6 +69,7 @@ const initializeSocket = (server) => {
 
     // Handle user leaving a conversation
     socket.on('leave_conversation', (otherUserId) => {
+      if (!otherUserId || typeof otherUserId !== 'string') return;
       const conversationId = Message.getConversationId(socket.userId, otherUserId);
       socket.leave(conversationId);
       console.log(`User ${socket.userId} left conversation ${conversationId}`);
@@ -72,7 +78,17 @@ const initializeSocket = (server) => {
     // Handle sending a message
     socket.on('send_message', async (data) => {
       try {
-        const { receiverId, content, type = 'text', fileUrl, fileName } = data;
+        const { receiverId, content, type = 'text', fileUrl, fileName } = data || {};
+
+        if (!receiverId || typeof receiverId !== 'string') {
+          socket.emit('error', { message: 'Valid receiverId is required' });
+          return;
+        }
+
+        if (!content || typeof content !== 'string' || !content.trim()) {
+          socket.emit('error', { message: 'Message content is required' });
+          return;
+        }
 
         // Validate receiver exists
         const receiver = await User.findById(receiverId);
@@ -116,7 +132,9 @@ const initializeSocket = (server) => {
 
     // Handle typing indicator
     socket.on('typing', (data) => {
+      if (!data) return;
       const { receiverId, isTyping } = data;
+      if (!receiverId || typeof receiverId !== 'string') return;
       const conversationId = Message.getConversationId(socket.userId, receiverId);
 
       socket.to(conversationId).emit('user_typing', {
@@ -129,7 +147,9 @@ const initializeSocket = (server) => {
     // Handle message read status
     socket.on('mark_read', async (data) => {
       try {
+        if (!data) return;
         const { senderId } = data;
+        if (!senderId || typeof senderId !== 'string') return;
         const conversationId = Message.getConversationId(socket.userId, senderId);
 
         await Message.updateMany(

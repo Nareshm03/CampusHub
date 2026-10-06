@@ -39,7 +39,9 @@ const feeSchema = new mongoose.Schema({
   },
   totalAmount: {
     type: Number,
-    required: true
+    // Computed by the pre-save hook from the component fields; default 0 so
+    // validation runs before the hook without rejecting a valid payload.
+    default: 0
   },
   paidAmount: {
     type: Number,

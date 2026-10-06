@@ -11,6 +11,7 @@ const GlobalSearch = ({ isOpen, onClose }) => {
   const [search, setSearch] = useState('');
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [searchError, setSearchError] = useState('');
   const router = useRouter();
   const { user } = useAuth();
 
@@ -39,14 +40,18 @@ const GlobalSearch = ({ isOpen, onClose }) => {
 
   const searchData = async (query) => {
     if (!query.trim() || !user) return;
-    
+
     setLoading(true);
+    setSearchError('');
     try {
       const response = await api.get(`/search?q=${encodeURIComponent(query)}&role=${user.role}`);
       setResults(response.data.results || []);
     } catch (error) {
       console.error('Search failed:', error);
       setResults([]);
+      // No search API is mounted on the backend: surface the failure instead
+      // of silently rendering an empty result list.
+      setSearchError('Search is currently unavailable. Please try again later.');
     } finally {
       setLoading(false);
     }
@@ -58,6 +63,7 @@ const GlobalSearch = ({ isOpen, onClose }) => {
         searchData(search);
       } else {
         setResults([]);
+        setSearchError('');
       }
     }, 300);
 
@@ -113,7 +119,13 @@ const GlobalSearch = ({ isOpen, onClose }) => {
             </div>
           )}
           
-          {!loading && search && results.length === 0 && (
+          {!loading && searchError && (
+            <div className="p-3 text-sm text-amber-600 text-center">
+              {searchError}
+            </div>
+          )}
+
+          {!loading && !searchError && search && results.length === 0 && (
             <Command.Empty className="p-3 text-sm text-gray-500 text-center">
               No results found for "{search}"
             </Command.Empty>

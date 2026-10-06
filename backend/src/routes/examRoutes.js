@@ -2,11 +2,12 @@ const express = require('express');
 const router = express.Router();
 const examController = require('../controllers/examController');
 const { authenticateToken, authorize } = require('../middleware/auth');
-const { 
-  validateExamRegistration, 
-  validatePayment, 
+const {
+  validateExamRegistration,
+  validatePayment,
   validateRevaluation,
   validateObjectId,
+  handleValidationErrors,
   sanitizeInput
 } = require('../middleware/validation');
 
@@ -37,10 +38,11 @@ router.post('/pay-fee',
 );
 
 // Get hall ticket
-router.get('/hall-ticket/:registrationId', 
-  authenticateToken, 
+router.get('/hall-ticket/:registrationId',
+  authenticateToken,
   authorize('STUDENT'),
   validateObjectId('registrationId'),
+  handleValidationErrors,
   examController.getHallTicket
 );
 

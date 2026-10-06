@@ -10,17 +10,34 @@ const calculateGrades = async (req, res, next) => {
     const { studentId } = req.params;
     const { semester } = req.query;
 
-    let query = { student: studentId };
-    if (semester) query['subject.semester'] = parseInt(semester);
+    const mongoose = require('mongoose');
+    if (!mongoose.Types.ObjectId.isValid(studentId)) {
+      return res.status(400).json({ success: false, error: 'Invalid student ID format' });
+    }
 
-    const marks = await Marks.find(query)
-      .populate('subject', 'credits semester');
+    // Ownership: students may only calculate their own grades.
+    if (req.user.role === 'STUDENT') {
+      const own = await Student.findOne({ userId: req.user.id });
+      if (!own || own._id.toString() !== studentId.toString()) {
+        return res.status(403).json({ success: false, error: 'Access denied. You can only view your own grades.' });
+      }
+    }
+
+    let marks = await Marks.find({ student: studentId })
+      .populate('subject', 'name credits semester');
+    if (semester !== undefined && semester !== '' && semester !== 'all') {
+      const sem = parseInt(semester, 10);
+      if (Number.isInteger(sem)) {
+        marks = marks.filter((m) => m.subject && m.subject.semester === sem);
+      }
+    }
 
     const semesterGrades = {};
     let totalCredits = 0;
     let totalGradePoints = 0;
 
     marks.forEach(mark => {
+      if (!mark.subject) return;
       const sem = mark.subject.semester;
       const credits = mark.subject.credits || 4;
       const totalMarks = (mark.internal1 + mark.internal2 + mark.internal3) / 3;
@@ -67,10 +84,26 @@ const calculateGrades = async (req, res, next) => {
 const generateTranscript = async (req, res, next) => {
   try {
     const { studentId } = req.params;
-    
+
+    const mongoose = require('mongoose');
+    if (!mongoose.Types.ObjectId.isValid(studentId)) {
+      return res.status(400).json({ success: false, error: 'Invalid student ID format' });
+    }
+
+    // Ownership: students may only fetch their own transcript.
+    if (req.user.role === 'STUDENT') {
+      const own = await Student.findOne({ userId: req.user.id });
+      if (!own || own._id.toString() !== studentId.toString()) {
+        return res.status(403).json({ success: false, error: 'Access denied. You can only view your own transcript.' });
+      }
+    }
+
     const student = await Student.findById(studentId)
       .populate('userId', 'name email')
       .populate('department', 'name');
+    if (!student) {
+      return res.status(404).json({ success: false, error: 'Student not found' });
+    }
 
     const marks = await Marks.find({ student: studentId })
       .populate('subject', 'name subjectCode credits semester')
@@ -78,15 +111,16 @@ const generateTranscript = async (req, res, next) => {
 
     const transcript = {
       student: {
-        name: student.userId.name,
+        name: student.userId?.name || 'Unknown',
         usn: student.usn,
-        department: student.department.name,
+        department: student.department?.name || 'Unknown',
         admissionYear: student.admissionYear
       },
       semesters: {}
     };
 
     marks.forEach(mark => {
+      if (!mark.subject) return;
       const sem = mark.subject.semester;
       const totalMarks = (mark.internal1 + mark.internal2 + mark.internal3) / 3;
       

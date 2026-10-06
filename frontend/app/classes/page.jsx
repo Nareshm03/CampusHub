@@ -115,10 +115,10 @@ export default function ClassesPage() {
                       {students.map((student, index) => (
                         <tr key={student._id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-blue-50 dark:hover:bg-gray-800/50 transition-all duration-150">
                           <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">{index + 1}</td>
-                          <td className="px-6 py-4 text-sm font-medium text-gray-900 dark:text-white">{student.name}</td>
-                          <td className="px-6 py-4 text-sm font-mono text-gray-600 dark:text-gray-300">{student.rollNumber}</td>
-                          <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300">{student.department?.name}</td>
-                          <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300">{student.email}</td>
+                          <td className="px-6 py-4 text-sm font-medium text-gray-900 dark:text-white">{student.userId?.name || 'Unknown'}</td>
+                          <td className="px-6 py-4 text-sm font-mono text-gray-600 dark:text-gray-300">{student.usn || 'N/A'}</td>
+                          <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300">{student.department?.name || 'N/A'}</td>
+                          <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300">{student.userId?.email || 'N/A'}</td>
                         </tr>
                       ))}
                     </tbody>

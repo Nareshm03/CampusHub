@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import { toast } from 'react-hot-toast';
 import axios from '@/lib/axios';
 import { BarChart, LineChart, PieChart, RadarChart, ProgressRing } from '@/components/Charts';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,6 +19,7 @@ export default function FacultyWorkloadDashboard() {
   const [subjectDetails, setSubjectDetails] = useState(null);
   const [plagiarismTrends, setPlagiarismTrends] = useState(null);
   const [attendanceConsistency, setAttendanceConsistency] = useState(null);
+  const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
     fetchDashboardData();
@@ -28,10 +30,14 @@ export default function FacultyWorkloadDashboard() {
   const fetchDashboardData = async () => {
     try {
       setLoading(true);
+      setLoadError('');
       const response = await axios.get('/faculty-analytics/dashboard');
       setDashboardData(response.data.data);
     } catch (error) {
       console.error('Error fetching dashboard:', error);
+      const message = error.response?.data?.message || error.response?.data?.error || 'Failed to load faculty analytics.';
+      setLoadError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -44,6 +50,7 @@ export default function FacultyWorkloadDashboard() {
       setSelectedSubject(subjectId);
     } catch (error) {
       console.error('Error fetching subject details:', error);
+      toast.error(error.response?.data?.message || error.response?.data?.error || 'Failed to load subject analytics.');
     }
   };
 
@@ -54,6 +61,7 @@ export default function FacultyWorkloadDashboard() {
       setPlagiarismTrends(response.data.data);
     } catch (error) {
       console.error('Error fetching plagiarism trends:', error);
+      toast.error(error.response?.data?.message || error.response?.data?.error || 'Failed to load plagiarism trends.');
     }
   };
 
@@ -64,6 +72,7 @@ export default function FacultyWorkloadDashboard() {
       setAttendanceConsistency(response.data.data);
     } catch (error) {
       console.error('Error fetching attendance consistency:', error);
+      toast.error(error.response?.data?.message || error.response?.data?.error || 'Failed to load attendance analytics.');
     }
   };
 
@@ -75,7 +84,18 @@ export default function FacultyWorkloadDashboard() {
     );
   }
 
-  if (!dashboardData) return null;
+  if (!dashboardData) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <h1 className="text-3xl font-bold mb-2">Faculty Workload & Effectiveness Dashboard</h1>
+        <div className="text-center py-12 bg-gray-50 rounded-lg mt-6">
+          <p className="text-gray-700 font-medium">Analytics unavailable</p>
+          <p className="text-gray-500 text-sm mt-1">{loadError || 'No analytics data returned for your account.'}</p>
+          <Button className="mt-4" onClick={fetchDashboardData}>Retry</Button>
+        </div>
+      </div>
+    );
+  }
 
   const { overview, subjects, workload, recentActivities } = dashboardData;
 
@@ -353,7 +373,7 @@ export default function FacultyWorkloadDashboard() {
                           {subjectDetails.students.map((student, idx) => (
                             <tr key={idx} className="border-b hover:bg-gray-50">
                               <td className="py-3 px-4 font-medium">{student.student.name}</td>
-                              <td className="text-center py-3 px-4">{student.student.rollNumber}</td>
+                              <td className="text-center py-3 px-4">{student.student.usn || student.student.rollNumber || '—'}</td>
                               <td className="text-center py-3 px-4">
                                 <span className={`font-semibold ${
                                   student.performance.average >= 75 ? 'text-green-600' :
@@ -448,7 +468,7 @@ export default function FacultyWorkloadDashboard() {
                               <div className="flex items-start justify-between mb-4">
                                 <div>
                                   <h4 className="font-semibold">{student.student.name}</h4>
-                                  <p className="text-sm text-gray-600">{student.student.rollNumber}</p>
+                                  <p className="text-sm text-gray-600">{student.student.usn || student.student.rollNumber || ''}</p>
                                 </div>
                                 <Badge variant="destructive">{student.riskLevel} Risk</Badge>
                               </div>
@@ -590,7 +610,7 @@ export default function FacultyWorkloadDashboard() {
                         <div key={idx} className="flex items-start justify-between p-4 bg-red-50 rounded-lg border border-red-200">
                           <div className="flex-1">
                             <div className="font-semibold">{offender.student.name}</div>
-                            <div className="text-sm text-gray-600">{offender.student.rollNumber}</div>
+                            <div className="text-sm text-gray-600">{offender.student.email || ''}</div>
                             <div className="mt-2 space-y-1">
                               {offender.violations.slice(0, 3).map((v, vidx) => (
                                 <div key={vidx} className="text-xs">
@@ -769,10 +789,6 @@ export default function FacultyWorkloadDashboard() {
                     <span className="text-gray-700">Homework Assignments</span>
                     <span className="font-bold text-lg">{workload.homeworkLoad}</span>
                   </div>
-                  <div className="flex justify-between items-center p-3 bg-gray-50 rounded">
-                    <span className="text-gray-700">Est. Classes/Week</span>
-                    <span className="font-bold text-lg">{workload.classesPerWeek}</span>
-                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -796,10 +812,10 @@ export default function FacultyWorkloadDashboard() {
                       <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 rounded">
                         <div>
                           <div className="font-medium">{hw.title}</div>
-                          <div className="text-sm text-gray-600">{hw.subject}</div>
+                          <div className="text-sm text-gray-600">{hw.course || '—'}</div>
                         </div>
                         <div className="text-right">
-                          <div className="text-sm">{hw.submissions} submissions</div>
+                          <div className="text-sm">{hw.submissionCount ?? 0} submissions</div>
                           <div className="text-xs text-gray-500">
                             Due: {new Date(hw.dueDate).toLocaleDateString()}
                           </div>

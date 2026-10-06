@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useMemo } from 'react';
 import ProtectedRoute from '../../../../components/ProtectedRoute';
+import QuickAttendance from '../../../../components/QuickAttendance';
 import Card from '../../../../components/ui/Card';
 import Button from '../../../../components/ui/Button';
 import api from '../../../../lib/axios';
@@ -15,6 +16,7 @@ export default function FacultyAttendancePage() {
   const [attendance, setAttendance] = useState({});
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [view, setView] = useState('detailed'); // 'detailed' | 'quick'
 
   useEffect(() => {
     async function fetchSubjects() {
@@ -194,6 +196,24 @@ export default function FacultyAttendancePage() {
               </Card>
             </div>
 
+            <div className="flex gap-2 mb-6">
+              <button
+                onClick={() => setView('detailed')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium ${view === 'detailed' ? 'bg-blue-600 text-white' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700'}`}
+              >
+                Detailed View
+              </button>
+              <button
+                onClick={() => setView('quick')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium ${view === 'quick' ? 'bg-blue-600 text-white' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700'}`}
+              >
+                Quick Entry
+              </button>
+            </div>
+
+            {view === 'quick' ? (
+              <QuickAttendance subjectId={selectedSubject} />
+            ) : (
             <Card className="overflow-hidden">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 p-6 border-b border-gray-200 dark:border-gray-700">
                 <div>
@@ -265,6 +285,7 @@ export default function FacultyAttendancePage() {
                 </table>
               </div>
             </Card>
+            )}
           </>
         )}
 

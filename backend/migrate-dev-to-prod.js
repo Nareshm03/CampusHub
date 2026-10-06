@@ -1,8 +1,13 @@
 require('dotenv').config();
 const mongoose = require('mongoose');
 
-const DEV_URI = 'mongodb+srv://nareshmurthy080_db_user:wCO0hi3827r6I17O@databasetest.peyxbzx.mongodb.net/campushub_dev?retryWrites=true&w=majority&appName=Databasetest';
-const PROD_URI = 'mongodb+srv://nareshmurthy080_db_user:wCO0hi3827r6I17O@databasetest.peyxbzx.mongodb.net/campushub_prod?retryWrites=true&w=majority&appName=Databasetest';
+// Connection strings must come from the environment — never hardcode credentials.
+const DEV_URI = process.env.DEV_MONGODB_URI;
+const PROD_URI = process.env.MONGODB_URI || process.env.PROD_MONGODB_URI;
+if (!DEV_URI || !PROD_URI) {
+  console.error('Set DEV_MONGODB_URI and MONGODB_URI env vars before migrating.');
+  process.exit(1);
+}
 
 const migrateData = async () => {
   try {

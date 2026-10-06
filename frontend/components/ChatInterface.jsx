@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useSocket } from '@/context/SocketContext';
+import { useAuth } from '@/context/AuthContext';
 import axios from '@/lib/axios';
 import { formatDistanceToNow } from 'date-fns';
 import { PaperAirplaneIcon, MagnifyingGlassIcon, UserCircleIcon } from '@heroicons/react/24/outline';
@@ -9,6 +10,7 @@ import { toast } from 'react-hot-toast';
 
 export default function ChatInterface() {
   const { socket, connected } = useSocket();
+  const { user } = useAuth();
   const [conversations, setConversations] = useState([]);
   const [selectedConversation, setSelectedConversation] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -175,7 +177,13 @@ export default function ChatInterface() {
   };
 
   const handleNewMessage = (message) => {
-    setMessages(prev => [...prev, message]);
+    if (!message || (!message._id && !message.tempId)) return;
+    // Deduplicate by id: the sender receives its own broadcast back, and a
+    // reconnect must never render the same persisted message twice.
+    setMessages(prev => {
+      if (message._id && prev.some(m => m._id === message._id)) return prev;
+      return [...prev, message];
+    });
     
     // Update conversation list
     setConversations(prev => {

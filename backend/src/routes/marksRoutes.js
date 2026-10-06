@@ -7,12 +7,12 @@ const {
   getMarksByStudent,
   calculateGPA
 } = require('../controllers/marksController');
-const { protect, authorize } = require('../middleware/auth');
+const { protect, authorize, facultySubjectAccess } = require('../middleware/auth');
 const { validate, marksValidation } = require('../middleware/validation');
 
 const router = express.Router();
 
-router.post('/entry', protect, authorize('FACULTY', 'ADMIN'), enterMarks);
+router.post('/entry', protect, authorize('FACULTY', 'ADMIN'), facultySubjectAccess, enterMarks);
 router.post('/', protect, authorize('FACULTY'), addOrUpdateMarks);
 router.get('/my', protect, authorize('STUDENT'), getMyMarks);
 router.get('/subject/:subjectId', protect, authorize('ADMIN', 'FACULTY'), getMarksBySubject);

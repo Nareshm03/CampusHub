@@ -96,9 +96,12 @@ UserSchema.pre('save', async function(next) {
 });
 
 // Sign JWT and return
+// Always embeds an `exp` claim: honors JWT_EXPIRE when configured,
+// otherwise falls back to a safe default so tokens stay verifiable
+// by expiry checks on both backend and frontend.
 UserSchema.methods.getSignedJwtToken = function() {
   return jwt.sign({ id: this._id }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRE
+    expiresIn: process.env.JWT_EXPIRE || '30d'
   });
 };
 

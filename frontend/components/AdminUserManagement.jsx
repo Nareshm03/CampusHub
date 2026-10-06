@@ -15,7 +15,7 @@ const AdminUserManagement = () => {
 
   const fetchUsers = async () => {
     try {
-      const response = await axios.get('/api/admin/users');
+      const response = await axios.get('/admin/users');
       setUsers(response.data.data);
     } catch (error) {
       console.error('Error fetching users:', error);
@@ -30,7 +30,7 @@ const AdminUserManagement = () => {
     }
 
     try {
-      await axios.delete(`/api/admin/users/${userId}`);
+      await axios.delete(`/admin/users/${userId}`);
       setUsers(users.filter(user => user._id !== userId));
       alert('User deleted successfully');
     } catch (error) {
@@ -44,7 +44,7 @@ const AdminUserManagement = () => {
     }
 
     try {
-      await axios.patch(`/api/admin/users/${userId}/remove-access`);
+      await axios.patch(`/admin/users/${userId}/remove-access`);
       fetchUsers(); // Refresh the list
       alert('User access removed successfully');
     } catch (error) {
@@ -68,7 +68,7 @@ const AdminUserManagement = () => {
     };
 
     try {
-      await axios.put(`/api/admin/users/${selectedUser._id}`, updateData);
+      await axios.put(`/admin/users/${selectedUser._id}`, updateData);
       setShowEditModal(false);
       fetchUsers(); // Refresh the list
       alert('User updated successfully');

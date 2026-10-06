@@ -48,7 +48,7 @@ export default function AuditLogsPage() {
 
   useEffect(() => {
     fetchAuditLogs();
-    if (user?.role === 'admin') {
+    if (user?.role === 'ADMIN') {
       fetchStatistics();
       fetchSuspiciousActivities();
       fetchRecentActivity();
@@ -193,7 +193,7 @@ export default function AuditLogsPage() {
               Enterprise-grade tracking of all system actions and modifications
             </p>
           </div>
-          {user?.role === 'admin' && (
+          {user?.role === 'ADMIN' && (
             <div className="flex gap-2">
               <Button variant="outline" onClick={() => handleExport('json')}>
                 <Download size={16} className="mr-2" />
@@ -209,7 +209,7 @@ export default function AuditLogsPage() {
       </div>
 
       {/* Statistics Cards (Admin Only) */}
-      {user?.role === 'admin' && statistics && (
+      {user?.role === 'ADMIN' && statistics && (
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <Card>
             <CardHeader className="pb-3">
@@ -276,7 +276,7 @@ export default function AuditLogsPage() {
           <TabsTrigger value="all">All Logs</TabsTrigger>
           <TabsTrigger value="marks">Marks</TabsTrigger>
           <TabsTrigger value="attendance">Attendance</TabsTrigger>
-          {user?.role === 'admin' && (
+          {user?.role === 'ADMIN' && (
             <>
               <TabsTrigger value="suspicious">Suspicious</TabsTrigger>
               <TabsTrigger value="statistics">Statistics</TabsTrigger>
@@ -484,7 +484,7 @@ export default function AuditLogsPage() {
         </TabsContent>
 
         {/* Suspicious Activities Tab (Admin Only) */}
-        {user?.role === 'admin' && (
+        {user?.role === 'ADMIN' && (
           <TabsContent value="suspicious" className="space-y-6">
             {suspiciousActivities.length === 0 ? (
               <Card>
@@ -553,7 +553,7 @@ export default function AuditLogsPage() {
         )}
 
         {/* Statistics Tab (Admin Only) */}
-        {user?.role === 'admin' && statistics && (
+        {user?.role === 'ADMIN' && statistics && (
           <TabsContent value="statistics">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* By Action */}

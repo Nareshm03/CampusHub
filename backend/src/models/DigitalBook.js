@@ -241,11 +241,11 @@ digitalBookSchema.methods.canUserAccess = function(user) {
   }
   
   if (this.accessType === 'Students Only') {
-    return user.role === 'student' || user.role === 'faculty' || user.role === 'admin';
+    return user.role === 'STUDENT' || user.role === 'FACULTY' || user.role === 'ADMIN';
   }
   
   if (this.accessType === 'Faculty Only') {
-    return user.role === 'faculty' || user.role === 'admin';
+    return user.role === 'FACULTY' || user.role === 'ADMIN';
   }
   
   if (this.accessType === 'Department Specific') {

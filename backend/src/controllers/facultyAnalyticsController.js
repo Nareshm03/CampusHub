@@ -4,6 +4,7 @@ const Marks = require('../models/Marks');
 const Attendance = require('../models/Attendance');
 const Homework = require('../models/Homework');
 const Submission = require('../models/Submission');
+const Student = require('../models/Student');
 
 // Get faculty dashboard analytics
 exports.getFacultyDashboard = async (req, res) => {
@@ -19,9 +20,9 @@ exports.getFacultyDashboard = async (req, res) => {
     // Get detailed analytics for each subject
     const subjectAnalytics = await Promise.all(
       subjects.map(async (subject) => {
-        // Get all students in this subject
+        // Get all students in this subject (Student profile: usn; name on User)
         const marks = await Marks.find({ subject: subject._id })
-          .populate('student', 'name rollNumber semester');
+          .populate({ path: 'student', select: 'usn semester', populate: { path: 'userId', select: 'name email' } });
         
         const attendance = await Attendance.find({ subject: subject._id });
         
@@ -108,12 +109,12 @@ exports.getSubjectAnalytics = async (req, res) => {
 
     // Get all marks for this subject
     const marks = await Marks.find({ subject: subjectId })
-      .populate('student', 'name rollNumber email semester cgpa')
-      .sort({ 'student.rollNumber': 1 });
+      .populate({ path: 'student', select: 'usn semester', populate: { path: 'userId', select: 'name email' } })
+      .sort({ createdAt: 1 });
 
     // Get attendance records
     const attendance = await Attendance.find({ subject: subjectId })
-      .populate('student', 'name rollNumber');
+      .populate({ path: 'student', select: 'usn', populate: { path: 'userId', select: 'name' } });
 
     // Get homework for this faculty and department
     const homeworks = await Homework.find({ 
@@ -169,20 +170,35 @@ exports.getPlagiarismTrends = async (req, res) => {
     const facultyId = req.user._id;
     const { subjectId, timeframe = '30' } = req.query;
 
-    const query = { createdBy: facultyId };
-    if (subjectId) query.subject = subjectId;
+    const query = { faculty: facultyId };
+    if (subjectId) {
+      const mongoose = require('mongoose');
+      if (!mongoose.Types.ObjectId.isValid(subjectId)) {
+        return res.status(400).json({ success: false, message: 'Invalid subject ID format' });
+      }
+      // Homework is linked to course/department, not subject: scope to the
+      // subject's department so the filter matches real homework rows.
+      const scopedSubject = await Subject.findOne({ _id: subjectId, faculty: facultyId }).select('department');
+      if (!scopedSubject) {
+        return res.status(404).json({
+          success: false,
+          message: 'Subject not found or access denied'
+        });
+      }
+      if (scopedSubject.department) query.department = scopedSubject.department;
+    }
 
     // Get homeworks created by this faculty
     const homeworks = await Homework.find(query)
-      .populate('subject', 'name code')
+      .populate('course', 'name code')
       .sort({ createdAt: -1 });
 
     const homeworkIds = homeworks.map(h => h._id);
 
     // Get all submissions for these homeworks
     const submissions = await Submission.find({ homework: { $in: homeworkIds } })
-      .populate('student', 'name rollNumber semester')
-      .populate('homework', 'title subject');
+      .populate('student', 'name email')
+      .populate({ path: 'homework', select: 'title course', populate: { path: 'course', select: 'name code' } });
 
     // Analyze plagiarism trends
     const plagiarismTrends = analyzePlagiarismTrends(submissions, timeframe);
@@ -229,15 +245,21 @@ exports.getAttendanceConsistency = async (req, res) => {
 
     // Get subjects taught by faculty
     const query = { faculty: facultyId };
-    if (subjectId) query._id = subjectId;
+    if (subjectId) {
+      const mongoose = require('mongoose');
+      if (!mongoose.Types.ObjectId.isValid(subjectId)) {
+        return res.status(400).json({ success: false, message: 'Invalid subject ID format' });
+      }
+      query._id = subjectId;
+    }
 
     const subjects = await Subject.find(query);
     const subjectIds = subjects.map(s => s._id);
 
     // Get all attendance records
     const attendanceRecords = await Attendance.find({ subject: { $in: subjectIds } })
-      .populate('student', 'name rollNumber semester')
-      .populate('subject', 'name code')
+      .populate({ path: 'student', select: 'usn', populate: { path: 'userId', select: 'name' } })
+      .populate('subject', 'name subjectCode')
       .sort({ date: -1 });
 
     // Analyze consistency patterns
@@ -361,12 +383,20 @@ async function calculateHomeworkMetrics(homeworks, facultyId) {
   let totalExpected = 0;
   let plagiarismScores = [];
 
+  // Expected submissions = students enrolled in each homework's department
+  // (real persisted rosters, not the submission count itself).
+  const expectedByDept = new Map();
   for (const homework of homeworks) {
     const submissions = await Submission.find({ homework: homework._id });
     totalSubmissions += submissions.length;
-    // Estimate expected submissions based on actual submissions since we don't have targetStudents
-    totalExpected += submissions.length;
-    
+    if (homework.department) {
+      const key = homework.department.toString();
+      if (!expectedByDept.has(key)) {
+        expectedByDept.set(key, await Student.countDocuments({ department: homework.department }));
+      }
+      totalExpected += expectedByDept.get(key);
+    }
+
     submissions.forEach(sub => {
       if (sub.plagiarismScore !== undefined) {
         plagiarismScores.push(sub.plagiarismScore);
@@ -436,8 +466,7 @@ function calculateWorkloadDistribution(subjects, analytics) {
       acc[sem] = (acc[sem] || 0) + 1;
       return acc;
     }, {}),
-    homeworkLoad: analytics.reduce((sum, s) => sum + s.homework.totalAssignments, 0),
-    classesPerWeek: subjects.length * 3 // Assuming 3 classes per subject per week
+    homeworkLoad: analytics.reduce((sum, s) => sum + s.homework.totalAssignments, 0)
   };
 }
 
@@ -533,10 +562,11 @@ async function generateStudentWiseAnalysis(marks, attendance, homeworks) {
 
     return {
       student: {
-        id: data.student._id,
-        name: data.student.name,
-        rollNumber: data.student.rollNumber,
-        semester: data.student.semester
+        id: data.student?._id,
+        name: data.student?.userId?.name || 'Unknown',
+        usn: data.student?.usn || '',
+        rollNumber: data.student?.usn || '',
+        semester: data.student?.semester
       },
       performance: {
         average: parseFloat(avgMarks.toFixed(2)),
@@ -706,18 +736,21 @@ function identifyRepeatOffenders(submissions) {
 }
 
 function calculateSubjectWisePlagiarism(submissions) {
-  const subjectMap = new Map();
+  // Homework links to Course (not Subject): group by course.
+  const courseMap = new Map();
 
   submissions.forEach(sub => {
-    const subjectId = sub.homework.subject.toString();
-    if (!subjectMap.has(subjectId)) {
-      subjectMap.set(subjectId, {
+    const course = sub.homework?.course;
+    const courseId = course?._id?.toString() || sub.homework?._id?.toString() || 'unknown';
+    if (!courseMap.has(courseId)) {
+      courseMap.set(courseId, {
+        courseName: course?.name || sub.homework?.title || 'Unknown',
         scores: [],
         total: 0,
         flagged: 0
       });
     }
-    const data = subjectMap.get(subjectId);
+    const data = courseMap.get(courseId);
     data.total++;
     if (sub.plagiarismScore !== undefined) {
       data.scores.push(sub.plagiarismScore);
@@ -725,8 +758,9 @@ function calculateSubjectWisePlagiarism(submissions) {
     }
   });
 
-  return Array.from(subjectMap.entries()).map(([subjectId, data]) => ({
-    subjectId,
+  return Array.from(courseMap.entries()).map(([courseId, data]) => ({
+    courseId,
+    courseName: data.courseName,
     totalSubmissions: data.total,
     flaggedCount: data.flagged,
     averageScore: data.scores.length > 0
@@ -765,12 +799,12 @@ function analyzeAttendanceConsistency(attendanceRecords) {
   });
 
   return Array.from(studentMap.values()).map(data => {
-    const present = data.records.filter(r => r.status === 'present').length;
+    const present = data.records.filter(r => r.status === 'PRESENT').length;
     const total = data.records.length;
     const rate = total > 0 ? (present / total) * 100 : 0;
 
     // Calculate consistency
-    const attendancePattern = data.records.map(r => r.status === 'present' ? 1 : 0);
+    const attendancePattern = data.records.map(r => r.status === 'PRESENT' ? 1 : 0);
     const consistency = calculateConsistencyFromPattern(attendancePattern);
 
     return {
@@ -827,13 +861,13 @@ function calculateMonthlyAttendanceTrends(attendanceRecords) {
     }
     const data = monthMap.get(month);
     data.total++;
-    if (record.status === 'present') data.present++;
+    if (record.status === 'PRESENT') data.present++;
   });
 
   return Array.from(monthMap.entries())
     .map(([month, data]) => ({
       month,
-      attendanceRate: (data.present / data.total) * 100,
+      attendanceRate: data.total > 0 ? (data.present / data.total) * 100 : 0,
       totalClasses: data.total
     }))
     .sort((a, b) => a.month.localeCompare(b.month));
@@ -850,7 +884,7 @@ function analyzeDayWisePatterns(attendanceRecords) {
     }
     const data = dayMap.get(day);
     data.total++;
-    if (record.status === 'present') data.present++;
+    if (record.status === 'PRESENT') data.present++;
   });
 
   return Array.from(dayMap.entries()).map(([day, data]) => ({
@@ -910,7 +944,7 @@ function calculateConsistencyScore(attendanceRecords) {
     }
     const data = dateMap.get(date);
     data.total++;
-    if (record.status === 'present') data.present++;
+    if (record.status === 'PRESENT') data.present++;
   });
 
   const rates = Array.from(dateMap.values()).map(d => (d.present / d.total) * 100);

@@ -1,6 +1,6 @@
 const express = require('express');
 const { markAttendance, getAttendance, getAttendanceSummary, getAttendanceTrends, getStudentAttendance } = require('../controllers/attendanceController');
-const { protect, authorize } = require('../middleware/auth');
+const { protect, authorize, facultySubjectAccess } = require('../middleware/auth');
 const { validate, attendanceValidation } = require('../middleware/validation');
 const { requirePermission, applyPermissionFilter, RESOURCES, ACTIONS } = require('../middleware/rbac');
 
@@ -11,6 +11,7 @@ const router = express.Router();
 router.post('/mark', 
   protect, 
   requirePermission(RESOURCES.ATTENDANCE, ACTIONS.CREATE),
+  facultySubjectAccess,
   markAttendance
 );
 

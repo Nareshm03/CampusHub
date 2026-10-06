@@ -104,7 +104,7 @@ export default function Notices() {
                 </p>
                 
                 <div className="flex justify-between items-center text-sm text-gray-500">
-                  <span>By: {notice.createdBy.name}</span>
+                  <span>By: {notice.createdBy?.name || 'Unknown'}</span>
                 </div>
               </motion.div>
             ))}

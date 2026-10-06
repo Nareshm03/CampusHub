@@ -1,4 +1,5 @@
 import { AuthProvider } from '../context/AuthContext';
+import { SocketProvider } from '../context/SocketContext';
 import ThemeProvider from '../components/providers/ThemeProvider';
 import ErrorBoundary from '../components/ErrorBoundary';
 import Navbar from '../components/Navbar';
@@ -41,6 +42,7 @@ export default function RootLayout({ children }) {
         <ErrorBoundary fallbackMessage="Something went wrong with the application">
           <ThemeProvider>
             <AuthProvider>
+              <SocketProvider>
               <div className="min-h-screen bg-white dark:bg-gray-900">
                 <Navbar />
                 <main className="pb-24 lg:pb-8">
@@ -50,6 +52,7 @@ export default function RootLayout({ children }) {
                 </main>
                 <MobileBottomNav />
               </div>
+              </SocketProvider>
               <Toaster 
                 position="top-right"
                 toastOptions={{

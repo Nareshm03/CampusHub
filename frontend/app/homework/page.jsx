@@ -45,7 +45,7 @@ export default function HomeworkPage() {
 
   const fetchHomework = async () => {
     try {
-      const response = await axios.get('/api/homework');
+      const response = await axios.get('/homework');
       setHomework(response.data.data);
     } catch (err) {
       setError('Failed to fetch homework');
@@ -56,7 +56,7 @@ export default function HomeworkPage() {
 
   const fetchCourses = async () => {
     try {
-      const response = await axios.get('/api/courses');
+      const response = await axios.get('/courses');
       setCourses(response.data.data || []);
     } catch (err) {
       console.error('Failed to fetch courses');
@@ -90,7 +90,7 @@ export default function HomeworkPage() {
         formDataToSend.append('attachments', file);
       });
 
-      await axios.post('/api/homework', formDataToSend, {
+      await axios.post('/homework', formDataToSend, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
 
@@ -121,7 +121,7 @@ export default function HomeworkPage() {
     if (!confirm('Are you sure you want to delete this homework?')) return;
 
     try {
-      await axios.delete(`/api/homework/${id}`);
+      await axios.delete(`/homework/${id}`);
       setSuccess('Homework deleted successfully');
       fetchHomework();
     } catch (err) {
@@ -155,7 +155,7 @@ export default function HomeworkPage() {
     <div className="container mx-auto p-6">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold">Homework Management</h1>
-        {user?.role === 'faculty' && (
+        {user?.role === 'FACULTY' && (
           <Button onClick={() => setShowCreateForm(!showCreateForm)}>
             <Plus className="mr-2 h-4 w-4" />
             Create Homework
@@ -403,7 +403,7 @@ export default function HomeworkPage() {
                     </CardDescription>
                   </div>
                   <div className="flex gap-2">
-                    {user?.role === 'faculty' && (
+                    {user?.role === 'FACULTY' && (
                       <>
                         <Button size="sm" variant="outline" onClick={() => viewSubmissions(hw._id)}>
                           <Users className="h-4 w-4 mr-1" />
@@ -445,7 +445,7 @@ export default function HomeworkPage() {
                     <div className="text-gray-600">{hw.attachments?.length || 0} files</div>
                   </div>
                 </div>
-                {user?.role === 'student' && (
+                {user?.role === 'STUDENT' && (
                   <div className="mt-4">
                     <Button onClick={() => router.push(`/homework/${hw._id}`)}>
                       <FileText className="h-4 w-4 mr-2" />

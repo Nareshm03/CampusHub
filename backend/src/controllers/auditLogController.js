@@ -45,7 +45,7 @@ exports.getAuditLogs = async (req, res) => {
     }
 
     // Faculty can only see logs related to their actions or subjects
-    if (req.user.role === 'faculty') {
+    if (req.user.role === 'FACULTY') {
       filters.$or = [
         { performedBy: req.user._id },
         { 'relatedEntities.subject': { $in: req.user.subjects || [] } }
@@ -99,7 +99,7 @@ exports.getAuditLogById = async (req, res) => {
     }
 
     // Faculty can only view logs they're authorized to see
-    if (req.user.role === 'faculty') {
+    if (req.user.role === 'FACULTY') {
       const isAuthorized = 
         log.performedBy._id.toString() === req.user._id.toString() ||
         (log.relatedEntities.subject && 
@@ -169,10 +169,10 @@ exports.getUserActivity = async (req, res) => {
     const { limit = 50 } = req.query;
 
     // Faculty can only view their own activity or students' activity
-    if (req.user.role === 'faculty' && userId !== req.user._id.toString()) {
+    if (req.user.role === 'FACULTY' && userId !== req.user._id.toString()) {
       // Check if the requested user is a student (would need additional validation)
       const requestedUser = await require('../models/User').findById(userId);
-      if (!requestedUser || requestedUser.role === 'faculty' || requestedUser.role === 'admin') {
+      if (!requestedUser || requestedUser.role === 'FACULTY' || requestedUser.role === 'ADMIN') {
         return res.status(403).json({
           success: false,
           message: 'Not authorized to view this user\'s activity'
@@ -437,7 +437,7 @@ exports.getMarksAuditLogs = async (req, res) => {
     }
 
     // Faculty can only see their own marks logs
-    if (req.user.role === 'faculty') {
+    if (req.user.role === 'FACULTY') {
       filters.performedBy = req.user._id;
     }
 
@@ -487,7 +487,7 @@ exports.getAttendanceAuditLogs = async (req, res) => {
     }
 
     // Faculty can only see their own attendance logs
-    if (req.user.role === 'faculty') {
+    if (req.user.role === 'FACULTY') {
       filters.performedBy = req.user._id;
     }
 

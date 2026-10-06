@@ -3,32 +3,48 @@ import { useState, useEffect } from 'react';
 import { Plus, X, Award, Code, Briefcase } from 'lucide-react';
 import api from '../lib/axios';
 
-export default function SkillsManager({ studentId }) {
+export default function SkillsManager() {
   const [skills, setSkills] = useState({ skills: [], certifications: [], projects: [] });
   const [newSkill, setNewSkill] = useState('');
   const [newCert, setNewCert] = useState({ name: '', issuer: '', date: '' });
   const [newProject, setNewProject] = useState({ name: '', tech: [], description: '' });
   const [loading, setLoading] = useState(false);
+  const [fetching, setFetching] = useState(true);
+  const [error, setError] = useState('');
+  const [saved, setSaved] = useState('');
 
   useEffect(() => {
     fetchSkills();
-  }, [studentId]);
+  }, []);
 
   const fetchSkills = async () => {
     try {
-      const response = await api.get(`/placement/skills/${studentId}`);
-      setSkills(response.data);
+      setError('');
+      const response = await api.get('/placements/skills/me');
+      const data = response.data?.data || {};
+      setSkills({
+        skills: Array.isArray(data.skills) ? data.skills : [],
+        certifications: Array.isArray(data.certifications) ? data.certifications : [],
+        projects: Array.isArray(data.projects) ? data.projects : [],
+      });
     } catch (error) {
       console.error('Failed to fetch skills:', error);
+      setError(error.response?.data?.message || 'Failed to load skills profile');
+    } finally {
+      setFetching(false);
     }
   };
 
   const saveSkills = async () => {
     setLoading(true);
+    setError('');
+    setSaved('');
     try {
-      await api.post(`/placement/skills/${studentId}`, skills);
+      await api.put('/placements/skills/me', skills);
+      setSaved('Profile saved successfully');
     } catch (error) {
       console.error('Failed to save skills:', error);
+      setError(error.response?.data?.message || 'Failed to save skills profile');
     } finally {
       setLoading(false);
     }
@@ -59,6 +75,17 @@ export default function SkillsManager({ studentId }) {
     }
   };
 
+  if (fetching) {
+    return (
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="animate-pulse">
+          <div className="h-6 bg-gray-200 rounded mb-4"></div>
+          <div className="h-32 bg-gray-200 rounded"></div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-white rounded-lg shadow-md p-6">
       <div className="flex items-center justify-between mb-6">
@@ -71,6 +98,17 @@ export default function SkillsManager({ studentId }) {
           {loading ? 'Saving...' : 'Save Changes'}
         </button>
       </div>
+
+      {error && (
+        <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded text-sm">
+          {error}
+        </div>
+      )}
+      {saved && (
+        <div className="mb-4 p-3 bg-green-50 border border-green-200 text-green-700 rounded text-sm">
+          {saved}
+        </div>
+      )}
 
       {/* Skills Section */}
       <div className="mb-6">

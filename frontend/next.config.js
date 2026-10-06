@@ -10,9 +10,11 @@ const nextConfig = {
     optimizePackageImports: ['@heroicons/react', 'recharts']
   },
   
-  // Turbopack configuration
+  // Turbopack project root: resolved portably (a hardcoded absolute path
+  // would break Linux/Vercel builds). An explicit turbopack section is
+  // required because the bundle analyzer adds webpack customization.
   turbopack: {
-    root: 'D:\\Projects\\CampusHub\\frontend'
+    root: __dirname
   },
   
   // Image optimization

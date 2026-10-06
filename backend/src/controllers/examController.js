@@ -4,10 +4,17 @@ const ExamResult = require('../models/ExamResult');
 const Student = require('../models/Student');
 const mongoose = require('mongoose');
 
+// Academic records live on the Student profile, not the User document.
+// Resolves the Student _id for the authenticated user (null when no profile).
+const resolveStudentId = async (userId) => {
+  const profile = await Student.findOne({ userId });
+  return profile ? profile._id : null;
+};
+
 // Get available exams for registration
 exports.getAvailableExams = async (req, res) => {
   try {
-    const { semester, department, page = 1, limit = 10 } = req.query;
+    const { semester, department, examId, page = 1, limit = 10 } = req.query;
     const filter = { 
       status: 'upcoming', 
       registrationDeadline: { $gte: new Date() } 
@@ -17,10 +24,13 @@ exports.getAvailableExams = async (req, res) => {
     if (department && mongoose.Types.ObjectId.isValid(department)) {
       filter.department = department;
     }
+    if (examId && mongoose.Types.ObjectId.isValid(examId)) {
+      filter._id = examId;
+    }
 
     const skip = (page - 1) * limit;
     const exams = await Exam.find(filter)
-      .populate('subject', 'name code')
+      .populate('subject', 'name subjectCode')
       .populate('department', 'name')
       .sort({ examDate: 1 })
       .skip(skip)
@@ -49,7 +59,13 @@ exports.registerForExam = async (req, res) => {
   
   try {
     const { examId, formData } = req.body;
-    const studentId = req.user.studentId;
+
+    if (!mongoose.Types.ObjectId.isValid(examId)) {
+      await session.abortTransaction();
+      return res.status(400).json({ success: false, message: 'Invalid exam ID format' });
+    }
+
+    const studentId = await resolveStudentId(req.user._id);
 
     if (!studentId) {
       return res.status(400).json({ success: false, message: 'Student profile not found' });
@@ -110,7 +126,12 @@ exports.payExamFee = async (req, res) => {
   
   try {
     const { registrationId, paymentId } = req.body;
-    
+
+    if (!mongoose.Types.ObjectId.isValid(registrationId)) {
+      await session.abortTransaction();
+      return res.status(400).json({ success: false, message: 'Invalid registration ID format' });
+    }
+
     const registration = await ExamRegistration.findById(registrationId)
       .populate('exam')
       .session(session);
@@ -120,7 +141,7 @@ exports.payExamFee = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Registration not found' });
     }
 
-    if (registration.student.toString() !== req.user.studentId.toString()) {
+    if (registration.student.toString() !== String(await resolveStudentId(req.user._id))) {
       await session.abortTransaction();
       return res.status(403).json({ success: false, message: 'Unauthorized access' });
     }
@@ -151,12 +172,16 @@ exports.payExamFee = async (req, res) => {
 exports.getHallTicket = async (req, res) => {
   try {
     const { registrationId } = req.params;
-    
+
+    if (!mongoose.Types.ObjectId.isValid(registrationId)) {
+      return res.status(400).json({ success: false, message: 'Invalid registration ID format' });
+    }
+
     const registration = await ExamRegistration.findById(registrationId)
       .populate('exam', 'title examDate duration venue maxMarks')
-      .populate('student', 'usn')
       .populate({
         path: 'student',
+        select: 'usn userId',
         populate: { path: 'userId', select: 'name email' }
       });
 
@@ -164,7 +189,9 @@ exports.getHallTicket = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Registration not found' });
     }
 
-    if (registration.student._id.toString() !== req.user.studentId.toString()) {
+    const studentId = await resolveStudentId(req.user._id);
+    const ownerId = registration.student?._id || registration.student;
+    if (!studentId || !ownerId || ownerId.toString() !== studentId.toString()) {
       return res.status(403).json({ success: false, message: 'Unauthorized access' });
     }
 
@@ -181,7 +208,10 @@ exports.getHallTicket = async (req, res) => {
 // Get exam results
 exports.getExamResults = async (req, res) => {
   try {
-    const studentId = req.user.studentId;
+    const studentId = await resolveStudentId(req.user._id);
+    if (!studentId) {
+      return res.status(404).json({ success: false, message: 'Student profile not found' });
+    }
     const { page = 1, limit = 10 } = req.query;
     
     const skip = (page - 1) * limit;
@@ -211,13 +241,18 @@ exports.getExamResults = async (req, res) => {
 exports.requestRevaluation = async (req, res) => {
   try {
     const { resultId } = req.body;
-    
+
+    if (!mongoose.Types.ObjectId.isValid(resultId)) {
+      return res.status(400).json({ success: false, message: 'Invalid result ID format' });
+    }
+
     const result = await ExamResult.findById(resultId);
     if (!result) {
       return res.status(404).json({ success: false, message: 'Result not found' });
     }
 
-    if (result.student.toString() !== req.user.studentId.toString()) {
+    const studentId = await resolveStudentId(req.user._id);
+    if (!studentId || result.student.toString() !== studentId.toString()) {
       return res.status(403).json({ success: false, message: 'Unauthorized access' });
     }
 
@@ -246,7 +281,10 @@ exports.requestRevaluation = async (req, res) => {
 // Get student registrations
 exports.getMyRegistrations = async (req, res) => {
   try {
-    const studentId = req.user.studentId;
+    const studentId = await resolveStudentId(req.user._id);
+    if (!studentId) {
+      return res.status(404).json({ success: false, message: 'Student profile not found' });
+    }
     const { page = 1, limit = 10 } = req.query;
     
     const skip = (page - 1) * limit;
