@@ -3,17 +3,33 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Bookmark, BookmarkCheck, 
          MessageSquare, Download, Search, Menu, X, Settings } from 'lucide-react';
+import { fetchSecureObjectUrl } from '../lib/secureFile';
 
 export function PDFReader({ fileUrl, bookId, initialPage = 1, totalPages, onProgressUpdate }) {
   const [currentPage, setCurrentPage] = useState(initialPage);
   const [zoom, setZoom] = useState(1);
   const [showControls, setShowControls] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [blobUrl, setBlobUrl] = useState(null);
+  const [loadError, setLoadError] = useState('');
   const containerRef = useRef(null);
 
   useEffect(() => {
-    // Load PDF using external library or iframe
-    // For production, use PDF.js or react-pdf
+    // Stored upload paths are never loaded directly: plain iframes send no
+    // Authorization header, so JWT-protected file routes would 401.
+    let cancelled = false;
+    setBlobUrl(null);
+    setLoadError('');
+    fetchSecureObjectUrl(fileUrl)
+      .then((url) => {
+        if (!cancelled) setBlobUrl(url);
+      })
+      .catch(() => {
+        if (!cancelled) setLoadError('Could not load this book file. You may not have access to it.');
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [fileUrl]);
 
   const handlePageChange = (newPage) => {
@@ -86,11 +102,17 @@ export function PDFReader({ fileUrl, bookId, initialPage = 1, totalPages, onProg
 
       {/* PDF Viewer */}
       <div className="w-full h-full flex items-center justify-center overflow-auto">
-        <iframe
-          src={`${fileUrl}#page=${currentPage}`}
-          className="w-full h-full"
-          style={{ transform: `scale(${zoom})`, transformOrigin: 'top center' }}
-        />
+        {loadError ? (
+          <p className="text-white/80 text-sm px-6 text-center">{loadError}</p>
+        ) : blobUrl ? (
+          <iframe
+            src={`${blobUrl}#page=${currentPage}`}
+            className="w-full h-full"
+            style={{ transform: `scale(${zoom})`, transformOrigin: 'top center' }}
+          />
+        ) : (
+          <p className="text-white/60 text-sm">Loading book…</p>
+        )}
       </div>
 
       {/* Bottom Navigation */}

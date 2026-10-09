@@ -6,7 +6,7 @@ import { useAuth } from '@/context/AuthContext';
 import axios from '@/lib/axios';
 import { formatDistanceToNow } from 'date-fns';
 import { PaperAirplaneIcon, MagnifyingGlassIcon, UserCircleIcon } from '@heroicons/react/24/outline';
-import { toast } from 'react-hot-toast';
+import { toast } from 'sonner';
 
 export default function ChatInterface() {
   const { socket, connected } = useSocket();

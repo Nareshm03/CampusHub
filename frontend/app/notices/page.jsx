@@ -14,11 +14,15 @@ export default function Notices() {
   const [error, setError] = useState('');
 
   useEffect(() => {
+    // Wait for authenticated identity: firing with user === null hits the
+    // admin-only /notices endpoint and locks a bogus error state.
+    if (!user) return;
     fetchNotices();
   }, [user]);
 
   const fetchNotices = async () => {
     try {
+      setError('');
       let endpoint = '/notices';
       if (user?.role === 'STUDENT') {
         endpoint = '/notices/my';

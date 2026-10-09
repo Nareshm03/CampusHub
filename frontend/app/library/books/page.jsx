@@ -11,6 +11,7 @@ import Input from '@/components/ui/Input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import SecureImg from '@/components/SecureImg';
 
 export default function DigitalLibraryPage() {
   const { user } = useAuth();
@@ -18,6 +19,7 @@ export default function DigitalLibraryPage() {
   const [popularBooks, setPopularBooks] = useState([]);
   const [readingList, setReadingList] = useState([]);
   const [statistics, setStatistics] = useState(null);
+  const [departments, setDepartments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState({
@@ -32,6 +34,7 @@ export default function DigitalLibraryPage() {
     fetchPopularBooks();
     fetchReadingList();
     fetchStatistics();
+    fetchDepartments();
   }, []);
 
   const fetchBooks = async () => {
@@ -50,6 +53,15 @@ export default function DigitalLibraryPage() {
       console.error('Error fetching books:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchDepartments = async () => {
+    try {
+      const response = await axios.get('/departments');
+      setDepartments(response.data.data || []);
+    } catch (error) {
+      console.error('Error fetching departments:', error);
     }
   };
 
@@ -93,10 +105,15 @@ export default function DigitalLibraryPage() {
         <CardHeader className="pb-3">
           <div className="flex gap-3">
             {book.coverImage ? (
-              <img 
-                src={book.coverImage} 
+              <SecureImg
+                src={book.coverImage}
                 alt={book.title}
                 className="w-20 h-28 object-cover rounded shadow"
+                fallback={
+                  <div className="w-20 h-28 bg-gradient-to-br from-blue-500 to-purple-600 rounded shadow flex items-center justify-center">
+                    <Book className="text-white" size={32} />
+                  </div>
+                }
               />
             ) : (
               <div className="w-20 h-28 bg-gradient-to-br from-blue-500 to-purple-600 rounded shadow flex items-center justify-center">
@@ -276,7 +293,9 @@ export default function DigitalLibraryPage() {
                 className="border rounded-md px-3 py-2"
               >
                 <option value="">All Departments</option>
-                {/* Add department options dynamically */}
+                {departments.map(dept => (
+                  <option key={dept._id} value={dept._id}>{dept.name}</option>
+                ))}
               </select>
               
               <select

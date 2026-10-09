@@ -1,5 +1,6 @@
 const Homework = require('../models/Homework');
 const Submission = require('../models/Submission');
+const mongoose = require('mongoose');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs').promises;
@@ -170,6 +171,12 @@ exports.getAllHomework = async (req, res) => {
  */
 exports.getHomeworkById = async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid homework ID format'
+      });
+    }
     const homework = await Homework.findById(req.params.id)
       .populate('course faculty department');
 
@@ -199,6 +206,12 @@ exports.getHomeworkById = async (req, res) => {
  */
 exports.updateHomework = async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid homework ID format'
+      });
+    }
     const homework = await Homework.findById(req.params.id);
 
     if (!homework) {
@@ -415,13 +428,25 @@ exports.getSubmissions = async (req, res) => {
     if (student) filter.student = student;
 
     const submissions = await Submission.find(filter)
-      .populate('student', 'name email rollNumber')
+      .populate('student', 'name email')
       .populate('gradedBy', 'name email')
       .sort({ submittedAt: -1 });
 
+    // Attach the Student-profile USN so faculty/admin see the real student
+    // identity (the populated User has name/email only — no rollNumber).
+    const Student = require('../models/Student');
+    const userIds = [...new Set(submissions.map((s) => s.student?._id?.toString()).filter(Boolean))];
+    const profiles = await Student.find({ userId: { $in: userIds } }).select('userId usn');
+    const usnByUser = new Map(profiles.map((p) => [p.userId.toString(), p.usn]));
+    const enriched = submissions.map((s) => {
+      const obj = s.toObject();
+      obj.studentUsn = usnByUser.get(s.student?._id?.toString()) || null;
+      return obj;
+    });
+
     res.json({
       success: true,
-      data: submissions
+      data: enriched
     });
   } catch (error) {
     console.error('Get submissions error:', error);
@@ -613,6 +638,13 @@ exports.downloadSubmissionFile = async (req, res) => {
   try {
     const { submissionId, fileIndex } = req.params;
 
+    if (!mongoose.Types.ObjectId.isValid(submissionId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid submission ID format'
+      });
+    }
+
     const submission = await Submission.findById(submissionId);
 
     if (!submission) {
@@ -620,6 +652,19 @@ exports.downloadSubmissionFile = async (req, res) => {
         success: false,
         message: 'Submission not found'
       });
+    }
+
+    // Only the owning student, the homework's faculty owner, or ADMIN.
+    if (req.user.role !== 'ADMIN') {
+      const homework = await Homework.findById(submission.homework).select('faculty');
+      const isOwnerStudent = submission.student.toString() === req.user._id.toString();
+      const isOwnerFaculty = !!homework && !!homework.faculty && homework.faculty.toString() === req.user._id.toString();
+      if (!isOwnerStudent && !isOwnerFaculty) {
+        return res.status(403).json({
+          success: false,
+          message: 'Not authorized to download this file'
+        });
+      }
     }
 
     const file = submission.files[parseInt(fileIndex)];

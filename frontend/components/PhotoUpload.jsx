@@ -3,8 +3,8 @@ import { useAuth } from '../context/AuthContext';
 import Button from './ui/Button';
 import Input from './ui/Input';
 import api from '../lib/axios';
-import { getProfilePhotoUrl } from '../lib/imageUtils';
-import { toast } from 'react-hot-toast';
+import SecureImg from './SecureImg';
+import { toast } from 'sonner';
 
 const PhotoUpload = ({ studentId, currentPhoto, onPhotoUpdate }) => {
   const { user, updateProfilePhoto } = useAuth();
@@ -58,7 +58,7 @@ const PhotoUpload = ({ studentId, currentPhoto, onPhotoUpdate }) => {
     }
   };
 
-  const displayPhoto = preview || (currentPhoto ? getProfilePhotoUrl(currentPhoto) : null);
+  const displayPhoto = preview || null;
 
   return (
     <div className="space-y-4">
@@ -70,6 +70,17 @@ const PhotoUpload = ({ studentId, currentPhoto, onPhotoUpdate }) => {
               alt="Profile"
               className="w-full h-full object-cover"
               onError={(e) => { e.target.style.display = 'none'; }}
+            />
+          ) : currentPhoto ? (
+            <SecureImg
+              src={currentPhoto}
+              alt="Profile"
+              className="w-full h-full object-cover"
+              fallback={
+                <div className="w-full h-full flex items-center justify-center text-gray-400 text-xs">
+                  No Photo
+                </div>
+              }
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-gray-400 text-xs">

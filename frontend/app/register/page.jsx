@@ -10,7 +10,9 @@ import {
 import { toast } from 'sonner';
 import api from '../../lib/axios';
 
-const ROLES = ['STUDENT', 'FACULTY', 'ADMIN', 'PARENT'];
+// Public self-registration offers unprivileged roles only (server-enforced
+// in authController.register). Staff accounts are created by an admin.
+const ROLES = ['STUDENT', 'PARENT'];
 
 function getPasswordStrength(password) {
   if (!password) return { score: 0, label: '', color: '' };

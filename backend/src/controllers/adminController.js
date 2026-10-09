@@ -36,13 +36,19 @@ const getAnalytics = async (req, res) => {
       { $project: { rate: { $multiply: [{ $divide: ['$present', '$total'] }, 100] } } }
     ]);
     
-    // Department performance
+    // Department performance — percentage-normalized (marks/maxMarks*100),
+    // the same scale as averageGPA/grade buckets. Raw-mark averages would
+    // mis-weight rows with different maxMarks.
     const departmentPerformance = await Marks.aggregate([
+      { $project: {
+        student: 1,
+        pct: { $cond: [{ $gt: ['$maxMarks', 0] }, { $multiply: [{ $divide: ['$marks', '$maxMarks'] }, 100] }, 0] }
+      } },
       { $lookup: { from: 'students', localField: 'student', foreignField: '_id', as: 'studentData' } },
       { $unwind: '$studentData' },
       { $lookup: { from: 'departments', localField: 'studentData.department', foreignField: '_id', as: 'dept' } },
       { $unwind: '$dept' },
-      { $group: { _id: '$dept.name', averageMarks: { $avg: '$marks' } } },
+      { $group: { _id: '$dept.name', averageMarks: { $avg: '$pct' } } },
       { $project: { _id: 0, department: '$_id', averageMarks: { $round: ['$averageMarks', 2] } } }
     ]);
     
@@ -103,13 +109,18 @@ const getAnalytics = async (req, res) => {
       { $sort: { '_id.year': 1, '_id.month': 1 } }
     ]);
 
-    // Semester performance (average marks by semester)
+    // Semester performance — percentage-normalized like department
+    // performance (see above), not raw marks.
     const semesterPerformance = await Marks.aggregate([
+      { $project: {
+        student: 1,
+        pct: { $cond: [{ $gt: ['$maxMarks', 0] }, { $multiply: [{ $divide: ['$marks', '$maxMarks'] }, 100] }, 0] }
+      } },
       { $lookup: { from: 'students', localField: 'student', foreignField: '_id', as: 'studentData' } },
       { $unwind: '$studentData' },
-      { $group: { 
-        _id: '$studentData.semester', 
-        averageMarks: { $avg: '$marks' },
+      { $group: {
+        _id: '$studentData.semester',
+        averageMarks: { $avg: '$pct' },
         totalStudents: { $addToSet: '$student' }
       }},
       { $project: { 

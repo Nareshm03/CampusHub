@@ -623,13 +623,26 @@ exports.getPlacementStatistics = async (req, res) => {
   }
 };
 
-// Update job
+// Update job — only mutable posting fields are accepted. Ownership and
+// system fields (company, postedBy, applications, views, timestamps) can
+// never be altered through this endpoint.
+const JOB_MUTABLE_FIELDS = [
+  'title', 'description', 'jobType', 'duration', 'location', 'salary', 'ctc',
+  'eligibility', 'requiredSkills', 'preferredSkills', 'qualifications',
+  'experience', 'positions', 'responsibilities', 'benefits',
+  'applicationDeadline', 'interviewProcess', 'documentsRequired', 'status',
+  'notes'
+];
 exports.updateJob = async (req, res) => {
   try {
     const { id } = req.params;
-    const updates = req.body;
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({ success: false, message: 'Invalid job ID format' });
+    }
+
+    const updates = {};
+    for (const field of JOB_MUTABLE_FIELDS) {
+      if (req.body[field] !== undefined) updates[field] = req.body[field];
     }
 
     const job = await JobPosting.findByIdAndUpdate(id, updates, { new: true, runValidators: true })
@@ -663,7 +676,9 @@ exports.updateJob = async (req, res) => {
   }
 };
 
-// Delete job
+// Delete job — refused when applications exist, so applicant history can
+// never disappear accidentally. Close/Cancel the posting instead (the
+// status enum supports both); only application-free postings are deleted.
 exports.deleteJob = async (req, res) => {
   try {
     const { id } = req.params;
@@ -671,14 +686,21 @@ exports.deleteJob = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid job ID format' });
     }
 
-    const job = await JobPosting.findByIdAndDelete(id);
-
+    const job = await JobPosting.findById(id).select('applications');
     if (!job) {
       return res.status(404).json({
         success: false,
         message: 'Job not found'
       });
     }
+    if (job.applications && job.applications.length > 0) {
+      return res.status(409).json({
+        success: false,
+        message: `Cannot delete a job with ${job.applications.length} application(s). Close or Cancel the posting instead.`
+      });
+    }
+
+    await JobPosting.findByIdAndDelete(id);
 
     res.json({
       success: true,

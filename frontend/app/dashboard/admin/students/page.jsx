@@ -8,7 +8,7 @@ import ChangePasswordModal from '../../../../components/ui/ChangePasswordModal';
 import { PlusIcon, PencilIcon, TrashIcon, KeyIcon } from '@heroicons/react/24/outline';
 import { toast } from 'sonner';
 import api from '../../../../lib/axios';
-import { getProfilePhotoUrl } from '../../../../lib/imageUtils';
+import SecureImg from '../../../../components/SecureImg';
 
 export default function AdminStudentsPage() {
   const [students, setStudents] = useState([]);
@@ -289,16 +289,15 @@ export default function AdminStudentsPage() {
                       <td className="px-6 py-4">
                         <div className="w-10 h-10 rounded-full overflow-hidden bg-gradient-to-br from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-600 ring-2 ring-gray-200 dark:ring-gray-600">
                           {student.profilePhoto ? (
-                            <img 
-                              src={getProfilePhotoUrl(student.profilePhoto)} 
-                              alt="Profile" 
+                            <SecureImg
+                              src={student.profilePhoto}
+                              alt="Profile"
                               className="w-full h-full object-cover"
-                              onError={(e) => {
-                                e.target.onerror = null;
-                                e.target.style.display = 'none';
-                                const initials = student.userId?.name?.charAt(0)?.toUpperCase() || '?';
-                                e.target.parentElement.innerHTML = `<div class="w-full h-full flex items-center justify-center text-gray-500 dark:text-gray-400 font-semibold text-xs">${initials}</div>`;
-                              }}
+                              fallback={
+                                <div className="w-full h-full flex items-center justify-center text-gray-500 dark:text-gray-400 font-semibold text-xs">
+                                  {student.userId?.name?.charAt(0)?.toUpperCase() || '?'}
+                                </div>
+                              }
                             />
                           ) : (
                             <div className="w-full h-full flex items-center justify-center text-gray-500 dark:text-gray-400 font-semibold text-xs">

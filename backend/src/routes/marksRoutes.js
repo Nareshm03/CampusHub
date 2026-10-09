@@ -15,7 +15,7 @@ const router = express.Router();
 router.post('/entry', protect, authorize('FACULTY', 'ADMIN'), facultySubjectAccess, enterMarks);
 router.post('/', protect, authorize('FACULTY'), addOrUpdateMarks);
 router.get('/my', protect, authorize('STUDENT'), getMyMarks);
-router.get('/subject/:subjectId', protect, authorize('ADMIN', 'FACULTY'), getMarksBySubject);
+router.get('/subject/:subjectId', protect, authorize('ADMIN', 'FACULTY'), facultySubjectAccess, getMarksBySubject);
 router.get('/student/:studentId', protect, getMarksByStudent);
 router.get('/gpa/:studentId', protect, calculateGPA);
 

@@ -103,6 +103,26 @@ export default function SubmissionsPage() {
     }
   };
 
+  const handleDownloadFile = async (submissionId, fileIndex, filename) => {
+    // Authenticated blob download: window.open() sends no Authorization
+    // header, so JWT-protected file routes would 401.
+    setError('');
+    try {
+      const response = await axios.get(
+        `/homework/submissions/${submissionId}/download/${fileIndex}`,
+        { responseType: 'blob' }
+      );
+      const url = window.URL.createObjectURL(response.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename || `submission-${submissionId}-${fileIndex}`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to download file');
+    }
+  };
+
   const formatDate = (date) => {
     return new Date(date).toLocaleString('en-US', {
       year: 'numeric',
@@ -293,7 +313,7 @@ export default function SubmissionsPage() {
                   <div className="text-sm">
                     <div>{selectedSubmission.student?.name}</div>
                     <div className="text-gray-600">{selectedSubmission.student?.email}</div>
-                    <div className="text-gray-600">Roll: {selectedSubmission.student?.rollNumber}</div>
+                    <div className="text-gray-600">USN: {selectedSubmission.studentUsn || selectedSubmission.student?.email || '—'}</div>
                   </div>
                 </div>
 
@@ -323,10 +343,10 @@ export default function SubmissionsPage() {
                             <FileText className="h-4 w-4" />
                             <span>{file.originalName}</span>
                           </div>
-                          <Button 
-                            size="sm" 
+                          <Button
+                            size="sm"
                             variant="ghost"
-                            onClick={() => window.open(`${axios.defaults.baseURL}/homework/submissions/${selectedSubmission._id}/download/${index}`, '_blank')}
+                            onClick={() => handleDownloadFile(selectedSubmission._id, index, file.originalName)}
                           >
                             <Download className="h-3 w-3" />
                           </Button>

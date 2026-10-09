@@ -5,7 +5,7 @@ import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import axios from '@/lib/axios';
 import { useAuth } from '@/context/AuthContext';
-import { toast } from 'react-hot-toast';
+import { toast } from 'sonner';
 import { MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 import ProtectedRoute from '@/components/ProtectedRoute';
 

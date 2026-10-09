@@ -43,15 +43,23 @@ exports.getConversation = async (req, res, next) => {
  */
 exports.getConversations = async (req, res, next) => {
   try {
+    const mongoose = require('mongoose');
     const userId = req.user.id;
+    const userObjectId = mongoose.Types.ObjectId.isValid(userId)
+      ? new mongoose.Types.ObjectId(userId)
+      : null;
+    if (!userObjectId) {
+      return res.status(401).json({ success: false, error: 'Invalid user identity' });
+    }
 
-    // Get all unique conversations
+    // Get all unique conversations (ObjectId comparison: raw strings never
+    // match ObjectId fields inside aggregation pipelines)
     const messages = await Message.aggregate([
       {
         $match: {
           $or: [
-            { sender: userId },
-            { receiver: userId }
+            { sender: userObjectId },
+            { receiver: userObjectId }
           ]
         }
       },
@@ -65,7 +73,7 @@ exports.getConversations = async (req, res, next) => {
           unreadCount: {
             $sum: {
               $cond: [
-                { $and: [{ $eq: ['$receiver', userId] }, { $eq: ['$isRead', false] }] },
+                { $and: [{ $eq: ['$receiver', userObjectId] }, { $eq: ['$isRead', false] }] },
                 1,
                 0
               ]
@@ -75,24 +83,34 @@ exports.getConversations = async (req, res, next) => {
       }
     ]);
 
-    // Populate user details
-    await Message.populate(messages, {
-      path: 'lastMessage.sender lastMessage.receiver',
-      select: 'name email role profilePicture'
-    });
+    // Populate user details. Aggregate results are plain objects whose
+    // `lastMessage` wrapper is not part of the schema, so Model.populate
+    // cannot resolve the nested refs — resolve participants directly.
+    const participantIds = [
+      ...new Set(
+        messages.flatMap((m) => [m.lastMessage.sender, m.lastMessage.receiver].map(String))
+      ),
+    ];
+    const participants = await User.find({ _id: { $in: participantIds } })
+      .select('name email role profilePicture')
+      .lean();
+    const byId = new Map(participants.map((u) => [String(u._id), u]));
 
     // Format response to include other user details
     const conversations = messages.map(conv => {
-      const isCurrentUserSender = conv.lastMessage.sender._id.toString() === userId.toString();
-      const otherUser = isCurrentUserSender ? conv.lastMessage.receiver : conv.lastMessage.sender;
+      const sender = byId.get(String(conv.lastMessage.sender)) || null;
+      const receiver = byId.get(String(conv.lastMessage.receiver)) || null;
+      if (!sender || !receiver) return null;
+      const isCurrentUserSender = String(conv.lastMessage.sender) === userId.toString();
+      const otherUser = isCurrentUserSender ? receiver : sender;
 
       return {
         conversationId: conv._id,
         otherUser,
-        lastMessage: conv.lastMessage,
+        lastMessage: { ...conv.lastMessage, sender, receiver },
         unreadCount: conv.unreadCount
       };
-    });
+    }).filter(Boolean);
 
     res.success(conversations, 'Conversations retrieved successfully');
   } catch (error) {

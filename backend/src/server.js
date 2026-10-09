@@ -101,8 +101,13 @@ app.use(apiVersioning);
 app.use(responseFormatter);
 
 
-// Serve static files
-app.use('/uploads', express.static('uploads'));
+// Uploaded files are NEVER served publicly. The former blanket
+// `express.static('uploads')` mount exposed every upload (ebooks, resumes,
+// homework, photos) without authentication, bypassing controller download
+// gates. Authenticated, authorized serving lives in fileRoutes
+// (GET /api/v1/files/:category/:filename); dedicated controller download
+// endpoints (homework submissions, study materials, digital-library)
+// remain the path for those categories.
 
 // Routes
 app.use('/api/v1', routes);

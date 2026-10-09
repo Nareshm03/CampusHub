@@ -111,8 +111,10 @@ const updateFaculty = async (req, res, next) => {
       console.log('Found faculty by userId, faculty._id:', faculty._id);
     }
 
-    // Extract user-related fields (name, email, password) from request body
-    const { name, email, password, ...facultyFields } = req.body;
+    // Extract user-related fields (name, email, password) from request body.
+    // userId/_id are never updatable here: a forged userId would re-link
+    // the profile to another User.
+    const { name, email, password, userId, _id, ...facultyFields } = req.body;
     
     // Update User model if name, email, or password is provided
     if (name || email || password) {

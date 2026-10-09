@@ -52,6 +52,45 @@ const updateDepartment = async (req, res) => {
 // @access  Admin
 const deleteDepartment = async (req, res) => {
   try {
+    const mongoose = require('mongoose');
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ success: false, error: 'Invalid department ID format' });
+    }
+
+    // Referential guard: never orphan dependent records. No cascade —
+    // rejection forces explicit reassignment first.
+    const Student = require('../models/Student');
+    const Faculty = require('../models/Faculty');
+    const Subject = require('../models/Subject');
+    const User = require('../models/User');
+    const Course = require('../models/Course');
+    const Assignment = require('../models/Assignment');
+    const Exam = require('../models/Exam');
+    const Homework = require('../models/Homework');
+    const DigitalBook = require('../models/DigitalBook');
+    const id = req.params.id;
+    const refs = await Promise.all([
+      Student.countDocuments({ department: id }),
+      Faculty.countDocuments({ department: id }),
+      Subject.countDocuments({ department: id }),
+      User.countDocuments({ department: id }),
+      Course.countDocuments({ department: id }),
+      Assignment.countDocuments({ department: id }),
+      Exam.countDocuments({ department: id }),
+      Homework.countDocuments({ department: id }),
+      DigitalBook.countDocuments({
+        $or: [{ department: id }, { allowedDepartments: id }]
+      })
+    ]);
+    const labels = ['students', 'faculty', 'subjects', 'users', 'courses', 'assignments', 'exams', 'homework', 'digital books'];
+    const blocking = labels.filter((label, i) => refs[i] > 0);
+    if (blocking.length > 0) {
+      return res.status(409).json({
+        success: false,
+        error: `Cannot delete department: still referenced by ${blocking.join(', ')}. Reassign those records first.`
+      });
+    }
+
     const department = await Department.findByIdAndDelete(req.params.id);
     if (!department) {
       return res.status(404).json({ success: false, error: 'Department not found' });

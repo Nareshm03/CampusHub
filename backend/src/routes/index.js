@@ -36,6 +36,7 @@ const assignmentRoutes = require('./assignmentRoutes');
 const examScheduleRoutes = require('./examScheduleRoutes');
 const parentRoutes = require('./parentRoutes');
 const studyMaterialRoutes = require('./studyMaterialRoutes');
+const fileRoutes = require('./fileRoutes');
 const router = express.Router();
 
 router.use('/auth', authRoutes);
@@ -75,6 +76,7 @@ router.use('/assignments', assignmentRoutes);
 router.use('/exam-schedules', examScheduleRoutes);
 router.use('/parent', parentRoutes);
 router.use('/study-materials', studyMaterialRoutes);
+router.use('/files', fileRoutes);
 
 // Health check route
 router.get('/health', (req, res) => {

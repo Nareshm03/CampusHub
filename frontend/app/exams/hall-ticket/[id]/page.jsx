@@ -33,20 +33,8 @@ export default function HallTicketPage() {
     window.print();
   };
 
-  const handleDownload = () => {
-    const element = document.getElementById('hall-ticket');
-    const opt = {
-      margin: 1,
-      filename: `hall-ticket-${hallTicket.hallTicketNumber}.pdf`,
-      image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 2 },
-      jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
-    };
-    
-    // Note: You'll need to install html2pdf.js for this to work
-    // html2pdf().set(opt).from(element).save();
-    alert('Download feature requires html2pdf.js library');
-  };
+  // Direct PDF export is not available (no PDF library wired). Print remains
+  // the supported path — browsers offer Save-as-PDF from the print dialog.
 
   if (loading) return <div className="p-6"><div className="animate-pulse space-y-4 max-w-4xl mx-auto"><div className="h-8 bg-gray-200 rounded w-1/3"></div><div className="h-64 bg-gray-200 rounded"></div></div></div>;
   if (!hallTicket) return (
@@ -75,10 +63,11 @@ export default function HallTicketPage() {
             Print
           </button>
           <button
-            onClick={handleDownload}
-            className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+            disabled
+            title="PDF export is not available — use Print and choose Save as PDF"
+            className="px-4 py-2 bg-green-300 text-white rounded cursor-not-allowed"
           >
-            Download PDF
+            Download PDF (unavailable)
           </button>
         </div>
       </div>

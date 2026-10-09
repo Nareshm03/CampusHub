@@ -120,12 +120,21 @@ exports.registerForExam = async (req, res) => {
 };
 
 // Pay exam fee
+//
+// INTEGRITY NOTE: there is no trusted exam payment provider wired in this
+// codebase (unlike semester fees, which are confirmed via Stripe webhook in
+// feeController). A client-supplied paymentId is therefore NEVER accepted as
+// proof of payment. Until a server-created intent + provider webhook flow
+// exists for exams (see feeController.createPaymentIntent/stripeWebhook as
+// the reference pattern), this endpoint honestly refuses and the
+// registration stays `fee_pending`. Free (fee=0) exams are unaffected — they
+// confirm at registration time.
 exports.payExamFee = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
-  
+
   try {
-    const { registrationId, paymentId } = req.body;
+    const { registrationId } = req.body;
 
     if (!mongoose.Types.ObjectId.isValid(registrationId)) {
       await session.abortTransaction();
@@ -135,7 +144,7 @@ exports.payExamFee = async (req, res) => {
     const registration = await ExamRegistration.findById(registrationId)
       .populate('exam')
       .session(session);
-      
+
     if (!registration) {
       await session.abortTransaction();
       return res.status(404).json({ success: false, message: 'Registration not found' });
@@ -151,15 +160,12 @@ exports.payExamFee = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Fee already paid' });
     }
 
-    registration.feeStatus = 'paid';
-    registration.paymentId = paymentId;
-    registration.status = 'confirmed';
-    registration.hallTicketNumber = `HT${Date.now()}${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
-    
-    await registration.save({ session });
-    await session.commitTransaction();
-    
-    res.json({ success: true, registration });
+    // No verified payment — fail honestly, keep fee_pending.
+    await session.abortTransaction();
+    return res.status(503).json({
+      success: false,
+      message: 'Online payment is not configured for exams. Your registration remains fee_pending — please contact administration for offline payment.'
+    });
   } catch (error) {
     await session.abortTransaction();
     res.status(500).json({ success: false, message: error.message });

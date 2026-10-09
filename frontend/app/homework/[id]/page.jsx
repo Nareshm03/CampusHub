@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Upload, FileText, AlertCircle, CheckCircle, Download, Calendar, Clock } from 'lucide-react';
+import { Upload, FileText, AlertCircle, CheckCircle, Calendar, Clock } from 'lucide-react';
 
 export default function HomeworkDetailPage() {
   const { id } = useParams();
@@ -259,9 +259,9 @@ export default function HomeworkDetailPage() {
                   <div key={index} className="flex items-center gap-2 text-sm">
                     <FileText className="h-4 w-4" />
                     <span>{file.originalName}</span>
-                    <Button size="sm" variant="ghost">
-                      <Download className="h-3 w-3" />
-                    </Button>
+                    {/* No authorized attachment-download endpoint exists; a
+                        dead Download button was removed rather than linking
+                        the unauthenticated static /uploads path. */}
                   </div>
                 ))}
               </div>

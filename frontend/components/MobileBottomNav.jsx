@@ -43,7 +43,7 @@ export default function MobileBottomNav() {
       return [
         base,
         { href: '/dashboard/faculty/attendance', label: 'Attendance', icon: CalendarIcon, activeIcon: CalendarSolidIcon },
-        { href: '/marks', label: 'Marks', icon: ClipboardDocumentCheckIcon, activeIcon: ClipboardSolidIcon },
+        { href: '/dashboard/faculty/marks', label: 'Marks', icon: ClipboardDocumentCheckIcon, activeIcon: ClipboardSolidIcon },
         { href: '/placement/manage', label: 'Jobs', icon: BriefcaseIcon, activeIcon: BriefcaseSolidIcon },
         { href: '/profile', label: 'Profile', icon: UserCircleIcon, activeIcon: UserSolidIcon },
       ];

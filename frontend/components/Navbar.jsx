@@ -14,20 +14,22 @@ import ThemeToggle from './ui/ThemeToggle';
 import GlobalSearch from './ui/GlobalSearch';
 import Button from './ui/Button';
 import NotificationDropdown from './NotificationDropdown';
-import { getProfilePhotoUrl } from '../lib/imageUtils';
+import SecureImg from './SecureImg';
 
 const UserAvatar = ({ user, size = 8 }) => {
-  const [imgError, setImgError] = useState(false);
-  const photoUrl = user?.profilePhoto ? getProfilePhotoUrl(user.profilePhoto) : null;
   const initials = user?.name?.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase() || '?';
 
-  if (photoUrl && !imgError) {
+  if (user?.profilePhoto) {
     return (
-      <img
-        src={photoUrl}
+      <SecureImg
+        src={user.profilePhoto}
         alt={user.name}
         className={`h-${size} w-${size} rounded-full object-cover`}
-        onError={() => setImgError(true)}
+        fallback={
+          <div className={`h-${size} w-${size} rounded-full bg-blue-600 flex items-center justify-center`}>
+            <span className="text-white text-xs font-semibold">{initials}</span>
+          </div>
+        }
       />
     );
   }

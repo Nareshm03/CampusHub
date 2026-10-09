@@ -73,6 +73,17 @@ export default function TicketsPage() {
     setReplyError('');
   };
 
+  // Supported by existing PUT /tickets/:id (own tickets; admin any ticket).
+  const handleStatusChange = async (ticketId, status) => {
+    setReplyError('');
+    try {
+      await api.put(`/tickets/${ticketId}`, { status });
+      fetchTickets();
+    } catch (error) {
+      setReplyError(error.response?.data?.error || 'Failed to update ticket status');
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSubmitting(true);
@@ -193,6 +204,21 @@ export default function TicketsPage() {
                         >
                           {expandedId === ticket._id ? 'Hide replies' : `Replies (${(ticket.comments || []).length})`}
                         </button>
+                        {['closed', 'resolved'].includes(ticket.status) ? (
+                          <button
+                            onClick={() => handleStatusChange(ticket._id, 'open')}
+                            className="text-primary-600 hover:text-primary-700 font-medium"
+                          >
+                            Reopen
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleStatusChange(ticket._id, 'closed')}
+                            className="text-primary-600 hover:text-primary-700 font-medium"
+                          >
+                            Close
+                          </button>
+                        )}
                       </div>
                       {expandedId === ticket._id && (
                         <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">

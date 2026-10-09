@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import axios from '@/lib/axios';
 import { useAuth } from '@/context/AuthContext';
-import { toast } from 'react-hot-toast';
+import { toast } from 'sonner';
 import { formatDistanceToNow } from 'date-fns';
 import {
   PlusIcon,

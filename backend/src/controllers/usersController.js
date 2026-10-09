@@ -54,9 +54,16 @@ const getAllUsers = async (req, res, next) => {
 const deleteUser = async (req, res, next) => {
   try {
     const user = await User.findById(req.params.id);
-    
+
     if (!user) {
       return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    if (user.role === 'ADMIN') {
+      const remainingAdmins = await User.countDocuments({ role: 'ADMIN', _id: { $ne: user._id } });
+      if (remainingAdmins === 0) {
+        return res.status(409).json({ success: false, message: 'Cannot delete the last ADMIN account' });
+      }
     }
 
     // Delete related profile data
@@ -87,10 +94,39 @@ const deleteUser = async (req, res, next) => {
 const updateUser = async (req, res, next) => {
   try {
     const { name, email, phone, address, department, role } = req.body;
-    
+
     const user = await User.findById(req.params.id);
     if (!user) {
       return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    // Role changes are whitelisted — arbitrary body values (e.g. SUPERADMIN)
+    // must never persist, and privilege can never be forged here because the
+    // route itself is ADMIN-only.
+    const ALLOWED_ROLES = ['STUDENT', 'FACULTY', 'ADMIN', 'PARENT'];
+    if (role !== undefined && !ALLOWED_ROLES.includes(role)) {
+      return res.status(400).json({ success: false, message: `role must be one of ${ALLOWED_ROLES.join(', ')}` });
+    }
+
+    // Last-ADMIN guard: demoting/removing the final ADMIN would lock all
+    // administration out with no recovery path.
+    const demotesAdmin = user.role === 'ADMIN' && role !== undefined && role !== 'ADMIN';
+    if (demotesAdmin) {
+      const remainingAdmins = await User.countDocuments({ role: 'ADMIN', _id: { $ne: user._id } });
+      if (remainingAdmins === 0) {
+        return res.status(409).json({ success: false, message: 'Cannot demote the last ADMIN account' });
+      }
+    }
+
+    if (department) {
+      const mongoose = require('mongoose');
+      if (!mongoose.Types.ObjectId.isValid(department)) {
+        return res.status(400).json({ success: false, message: 'Invalid department ID format' });
+      }
+      const Department = require('../models/Department');
+      if (!(await Department.exists({ _id: department }))) {
+        return res.status(400).json({ success: false, message: 'Department not found' });
+      }
     }
 
     // Update user fields
@@ -126,6 +162,13 @@ const removeUserAccess = async (req, res, next) => {
     const user = await User.findById(req.params.id);
     if (!user) {
       return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    if (user.role === 'ADMIN') {
+      const remainingAdmins = await User.countDocuments({ role: 'ADMIN', _id: { $ne: user._id } });
+      if (remainingAdmins === 0) {
+        return res.status(409).json({ success: false, message: 'Cannot remove access from the last ADMIN account' });
+      }
     }
 
     // Disable account by setting a very long lock time

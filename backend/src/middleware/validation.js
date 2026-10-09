@@ -64,7 +64,9 @@ const validateExamRegistration = [
 
 const validatePayment = [
   body('registrationId').isMongoId().withMessage('Valid registration ID required'),
-  body('paymentId').trim().isLength({ min: 5, max: 50 }).withMessage('Valid payment ID required'),
+  // paymentId is accepted-but-ignored: exam pay-fee never treats a client
+  // value as proof of payment (see examController.payExamFee).
+  body('paymentId').optional().trim().isLength({ min: 5, max: 50 }).withMessage('Valid payment ID required'),
   handleValidationErrors
 ];
 

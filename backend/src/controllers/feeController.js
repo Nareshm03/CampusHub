@@ -32,7 +32,22 @@ const resolveStudentFromUser = async (userId) => {
 // @access  Private/Admin
 const createFee = async (req, res, next) => {
   try {
-    const { student, semester, academicYear } = req.body;
+    // Whitelist: totals, paid state and payment history are server-derived.
+    // A forged totalAmount / paidAmount / status in the body must never
+    // create a paid (or discounted) record.
+    const {
+      student, semester, academicYear, dueDate,
+      tuitionFee = 0, examFee = 0, libraryFee = 0, labFee = 0, otherFees = 0
+    } = req.body;
+
+    const components = { tuitionFee, examFee, libraryFee, labFee, otherFees };
+    for (const [key, value] of Object.entries(components)) {
+      const n = Number(value);
+      if (!Number.isFinite(n) || n < 0) {
+        return res.status(400).json({ success: false, error: `${key} must be a non-negative number` });
+      }
+      components[key] = n;
+    }
 
     const studentDoc = await Student.findById(student);
     if (!studentDoc) {
@@ -47,7 +62,11 @@ const createFee = async (req, res, next) => {
       });
     }
 
-    const fee = await Fee.create(req.body);
+    const fee = await Fee.create({
+      student, semester, academicYear, dueDate,
+      ...components,
+      paidAmount: 0
+    });
     const populatedFee = await Fee.findById(fee._id)
       .populate({
         path: 'student',
@@ -147,11 +166,22 @@ const recordPayment = async (req, res, next) => {
       return res.status(400).json({ success: false, error: 'Amount must be a positive number' });
     }
 
+    const PAYMENT_METHODS = ['CASH', 'CARD', 'UPI', 'BANK_TRANSFER', 'CHEQUE'];
+    if (!PAYMENT_METHODS.includes(paymentMethod)) {
+      return res.status(400).json({ success: false, error: `paymentMethod must be one of ${PAYMENT_METHODS.join(', ')}` });
+    }
+
     const fee = await Fee.findById(req.params.feeId).populate({
       path: 'student',
       populate: { path: 'userId', select: 'name email' }
     });
     if (!fee) return res.status(404).json({ success: false, error: 'Fee record not found' });
+
+    // Idempotency: a retried/duplicated manual entry with the same
+    // transactionId must never double-credit the balance.
+    if (transactionId && (fee.payments || []).some((p) => p.transactionId === transactionId)) {
+      return res.status(409).json({ success: false, error: 'This transaction has already been recorded', duplicate: true });
+    }
 
     const balance = fee.totalAmount - (fee.paidAmount || 0);
     if (balance <= 0) {

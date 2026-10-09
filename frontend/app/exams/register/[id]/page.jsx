@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import axios from '@/lib/axios';
-import { toast } from 'react-hot-toast';
+import { toast } from 'sonner';
 
 export default function ExamRegisterPage() {
   const [exam, setExam] = useState(null);

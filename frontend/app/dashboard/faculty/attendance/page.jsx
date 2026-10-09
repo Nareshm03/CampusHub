@@ -85,13 +85,11 @@ export default function FacultyAttendancePage() {
         status: attendance[student._id] || 'PRESENT'
       }));
       await api.post('/attendance/mark', { attendance: attendanceData });
-      toast.success(`Attendance marked successfully! ${stats.present} present, ${stats.absent} absent`);
+      // Backend upserts per student/subject/date (ATTENDANCE_MARKED vs
+      // ATTENDANCE_UPDATED audit events): re-marking updates records.
+      toast.success(`Attendance saved successfully! ${stats.present} present, ${stats.absent} absent`);
     } catch (error) {
-      if (error.response?.status === 400 && error.response?.data?.error?.includes('duplicate')) {
-        toast.error('Attendance already marked for this date');
-      } else {
-        toast.error(error.response?.data?.error || 'Failed to mark attendance');
-      }
+      toast.error(error.response?.data?.error || 'Failed to mark attendance');
     } finally {
       setSubmitting(false);
     }

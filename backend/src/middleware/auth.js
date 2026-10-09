@@ -157,9 +157,10 @@ const checkOwnership = (req, res, next) => {
   next();
 };
 
-// Ensure faculty only write attendance/marks for their own subjects.
+// Ensure faculty only access their own subjects (reads and writes).
 // ADMIN bypasses; other roles are left to the route's own gates. Reads the
-// subject ids from body records ({ subjectId } in attendance[] / marks[]).
+// subject ids from body records ({ subjectId } in attendance[] / marks[])
+// as well as subject id route params (:id / :subjectId) and ?subjectId.
 // Empty bodies pass through so existing empty-payload behavior is preserved.
 const facultySubjectAccess = async (req, res, next) => {
   try {
@@ -181,6 +182,15 @@ const facultySubjectAccess = async (req, res, next) => {
         ? body.marks
         : [];
     const subjectIds = [...new Set(records.map((r) => r && r.subjectId).filter(Boolean))];
+
+    // Subject-scoped read routes carry the id in params/query instead of
+    // body. Only mount this middleware on subject-scoped routes, where
+    // :id / :subjectId is always the subject.
+    if (req.params) {
+      if (req.params.subjectId) subjectIds.push(req.params.subjectId);
+      else if (req.params.id) subjectIds.push(req.params.id);
+    }
+    if (req.query && req.query.subjectId) subjectIds.push(req.query.subjectId);
 
     if (subjectIds.length === 0) {
       return next();

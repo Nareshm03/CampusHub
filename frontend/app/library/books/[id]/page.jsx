@@ -10,7 +10,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Star, Download, BookOpen, Bookmark, MessageSquare, Info, Star as StarIcon } from 'lucide-react';
-import { toast } from 'react-hot-toast';
+import { toast } from 'sonner';
+import SecureImg from '@/components/SecureImg';
 
 export default function BookDetailPage() {
   const params = useParams();
@@ -21,6 +22,7 @@ export default function BookDetailPage() {
   const [bookmarks, setBookmarks] = useState([]);
   const [annotations, setAnnotations] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [showReader, setShowReader] = useState(false);
   const [rating, setRating] = useState(0);
   const [review, setReview] = useState('');
@@ -35,6 +37,7 @@ export default function BookDetailPage() {
   const fetchBookDetails = async () => {
     try {
       setLoading(true);
+      setLoadError('');
       const response = await axios.get(`/digital-library/books/${params.id}`);
       setBook(response.data.data.book);
       setUserProgress(response.data.data.userProgress);
@@ -42,8 +45,12 @@ export default function BookDetailPage() {
       setAnnotations(response.data.data.userAnnotations || []);
     } catch (error) {
       console.error('Error fetching book:', error);
-      toast.error('Failed to load book details');
-      router.push('/library/books');
+      if (error.response?.status === 404) {
+        setLoadError('not-found');
+      } else {
+        setLoadError('error');
+        toast.error('Failed to load book details');
+      }
     } finally {
       setLoading(false);
     }
@@ -117,11 +124,23 @@ export default function BookDetailPage() {
 
   const handleDownload = async () => {
     try {
-      window.open(`${process.env.NEXT_PUBLIC_API_URL}/digital-library/books/${params.id}/download`, '_blank');
+      // Authenticated blob download (same pattern as study materials):
+      // window.open() sends no Authorization header, so JWT-protected file
+      // routes would 401. No token in URL, no secret leakage.
+      const response = await axios.get(`/digital-library/books/${params.id}/download`, {
+        responseType: 'blob'
+      });
+      const filename = book?.fileName || book?.title || `book-${params.id}`;
+      const url = window.URL.createObjectURL(response.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      window.URL.revokeObjectURL(url);
       toast.success('Download started');
     } catch (error) {
       console.error('Error downloading book:', error);
-      toast.error('Failed to download book');
+      toast.error(error.response?.data?.message || 'Failed to download book');
     }
   };
 
@@ -151,7 +170,30 @@ export default function BookDetailPage() {
   }
 
   if (!book) {
-    return null;
+    if (loading) return null;
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <div className="max-w-2xl mx-auto text-center py-12 bg-white dark:bg-gray-800 rounded-lg shadow">
+          <div className="text-5xl mb-4">{loadError === 'not-found' ? '📕' : '⚠️'}</div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+            {loadError === 'not-found' ? 'Book not found' : 'Could not load this book'}
+          </h1>
+          <p className="text-gray-500 dark:text-gray-400 mb-6">
+            {loadError === 'not-found'
+              ? 'The requested book does not exist or you do not have access to it.'
+              : 'Something went wrong while loading the book. Please try again.'}
+          </p>
+          <div className="flex gap-3 justify-center">
+            {loadError !== 'not-found' && (
+              <Button onClick={fetchBookDetails}>Retry</Button>
+            )}
+            <Button variant="outline" onClick={() => router.push('/library/books')}>
+              Back to Catalog
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (showReader) {
@@ -181,10 +223,15 @@ export default function BookDetailPage() {
             {/* Book Cover */}
             <div className="flex-shrink-0">
               {book.coverImage ? (
-                <img 
-                  src={book.coverImage} 
+                <SecureImg
+                  src={book.coverImage}
                   alt={book.title}
                   className="w-48 h-64 object-cover rounded-lg shadow-md"
+                  fallback={
+                    <div className="w-48 h-64 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg shadow-md flex items-center justify-center">
+                      <BookOpen className="text-white" size={64} />
+                    </div>
+                  }
                 />
               ) : (
                 <div className="w-48 h-64 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg shadow-md flex items-center justify-center">

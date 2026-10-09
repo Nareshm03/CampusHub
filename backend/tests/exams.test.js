@@ -65,9 +65,10 @@ describe('exams', () => {
     expect(bad.status).toBe(400);
   });
 
-  test('paid flow: fee_pending, hall ticket blocked, pay, double-pay rejected', async () => {
-    const { a, paid } = await seed();
+  test('paid flow: fee_pending, hall ticket blocked, unverified pay refused, state unchanged', async () => {
+    const { a, b, paid } = await seed();
     const ownerA = await User.findById(a.profile.userId);
+    const ownerB = await User.findById(b.profile.userId);
     const reg = await request(app).post('/api/v1/exams/register').set(authHeader(ownerA))
       .send({ examId: String(paid._id), formData: form('EXMAAA0001') });
     expect(reg.body.registration.status).toBe('fee_pending');
@@ -76,14 +77,27 @@ describe('exams', () => {
     const early = await request(app).get(`/api/v1/exams/hall-ticket/${regId}`).set(authHeader(ownerA));
     expect(early.status).toBe(400);
 
-    const pay = await request(app).post('/api/v1/exams/pay-fee').set(authHeader(ownerA))
+    // A client-minted paymentId must never flip fee_pending to paid: no
+    // trusted exam payment provider exists, so the server refuses honestly.
+    const fake = await request(app).post('/api/v1/exams/pay-fee').set(authHeader(ownerA))
       .send({ registrationId: regId, paymentId: 'PAYTEST12345' });
-    expect(pay.status).toBe(200);
-    expect(pay.body.registration.feeStatus).toBe('paid');
+    expect(fake.status).toBe(503);
 
-    const again = await request(app).post('/api/v1/exams/pay-fee').set(authHeader(ownerA))
+    const forged = await request(app).post('/api/v1/exams/pay-fee').set(authHeader(ownerA))
+      .send({ registrationId: regId });
+    expect(forged.status).toBe(503);
+
+    // Cross-student pay attempt stays forbidden.
+    const cross = await request(app).post('/api/v1/exams/pay-fee').set(authHeader(ownerB))
       .send({ registrationId: regId, paymentId: 'PAYTEST99999' });
-    expect(again.status).toBe(400);
+    expect(cross.status).toBe(403);
+
+    // State unchanged: still fee_pending, hall ticket still blocked.
+    const still = await request(app).get(`/api/v1/exams/hall-ticket/${regId}`).set(authHeader(ownerA));
+    expect(still.status).toBe(400);
+    const mine = await request(app).get('/api/v1/exams/my-registrations').set(authHeader(ownerA));
+    const mineReg = (mine.body.registrations || []).find((x) => x._id === regId);
+    expect(mineReg.status).toBe('fee_pending');
   });
 
   test('hall ticket: own ok with populated fields; cross-student 403; malformed 400', async () => {

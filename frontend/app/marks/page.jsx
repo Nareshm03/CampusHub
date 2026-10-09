@@ -149,15 +149,6 @@ export default function MarksPage() {
     }
   };
 
-  const fillSampleMarks = () => {
-    const sampleMarks = {};
-    students.forEach(student => {
-      // Generate random marks between 60-95
-      sampleMarks[student._id] = (Math.floor(Math.random() * 36) + 60).toString();
-    });
-    setMarks(sampleMarks);
-  };
-
   if (initialLoading) {
     return (
       <ProtectedRoute allowedRoles={['FACULTY', 'ADMIN']}>
@@ -266,9 +257,6 @@ export default function MarksPage() {
                 Students ({students.length})
               </h2>
               <div className="flex gap-2">
-                <Button size="sm" variant="outline" onClick={fillSampleMarks}>
-                  Fill Sample
-                </Button>
                 <Button size="sm" variant="outline" onClick={() => setMarks({})}>
                   Clear All
                 </Button>

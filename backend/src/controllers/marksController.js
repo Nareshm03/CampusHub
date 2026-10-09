@@ -1,6 +1,7 @@
 const Marks = require('../models/Marks');
 const Student = require('../models/Student');
 const Subject = require('../models/Subject');
+const mongoose = require('mongoose');
 const { validate, marksValidation } = require('../middleware/validation');
 const AuditLogger = require('../utils/auditLogger');
 
@@ -20,6 +21,20 @@ const enterMarks = async (req, res, next) => {
 
     const results = [];
     
+    // Fail fast on out-of-range values before any write, so a batch can
+    // never partially persist invalid marks (create and update paths share
+    // this gate).
+    for (const record of marks) {
+      const s = Number(record && record.marks);
+      const m = Number(record && record.maxMarks);
+      if (!Number.isFinite(s) || !Number.isFinite(m) || s < 0 || m < 1 || s > m) {
+        return res.status(400).json({
+          success: false,
+          error: 'Marks must be a number between 0 and maxMarks'
+        });
+      }
+    }
+
     for (const record of marks) {
       const { studentId, subjectId, examType, examName, marks: studentMarks, maxMarks, grade } = record;
       
@@ -227,6 +242,8 @@ const getMyMarks = async (req, res, next) => {
     const subjectMarksMap = {};
     
     marks.forEach(mark => {
+      // Rows whose subject was deleted populate null — skip, never 500.
+      if (!mark.subject) return;
       const subjectId = mark.subject._id.toString();
       
       if (!subjectMarksMap[subjectId]) {
@@ -336,10 +353,64 @@ const getMarksBySubject = async (req, res, next) => {
 // @desc    Calculate GPA for a student
 // @route   GET /api/marks/gpa/:studentId
 // @access  Private
+// Server-side read scope for student-scoped marks endpoints.
+// STUDENT sees only their own profile; PARENT only their linked child;
+// FACULTY only students enrolled in a subject they teach (profile subjects
+// or Subject.faculty); ADMIN sees all. Never rely on frontend guards.
+const assertMarksReadAccess = async (req, studentId) => {
+  const denied = (status, error) => ({ status, error });
+  if (!mongoose.Types.ObjectId.isValid(studentId)) {
+    return denied(400, 'Invalid student ID format');
+  }
+  const Student = require('../models/Student');
+  const student = await Student.findById(studentId).select('subjects userId');
+  if (!student) {
+    return denied(404, 'Student profile not found');
+  }
+  const role = req.user.role;
+  if (role === 'ADMIN') {
+    return { student };
+  }
+  if (role === 'STUDENT') {
+    const me = await Student.findOne({ userId: req.user.id }).select('_id');
+    if (!me || me._id.toString() !== student._id.toString()) {
+      return denied(403, 'Access denied. You can only view your own marks.');
+    }
+    return { student };
+  }
+  if (role === 'PARENT') {
+    const Parent = require('../models/Parent');
+    const parent = await Parent.findOne({ userId: req.user.id });
+    if (!parent || parent.linkedStudent?.toString() !== student._id.toString()) {
+      return denied(403, 'Access denied. You can only view your linked child\'s marks.');
+    }
+    return { student };
+  }
+  if (role === 'FACULTY') {
+    const Faculty = require('../models/Faculty');
+    const Subject = require('../models/Subject');
+    const fac = await Faculty.findOne({ userId: req.user.id }).select('subjects');
+    const teaches = new Set((fac?.subjects || []).map((s) => s.toString()));
+    const shared = (student.subjects || []).some((s) => teaches.has(s.toString()));
+    if (!shared) {
+      const viaSubject = await Subject.exists({ _id: { $in: student.subjects || [] }, faculty: req.user.id });
+      if (!viaSubject) {
+        return denied(403, 'Access denied. You can only view marks for students in your subjects.');
+      }
+    }
+    return { student };
+  }
+  return denied(403, 'Access denied.');
+};
+
 const calculateGPA = async (req, res, next) => {
   try {
     const { studentId } = req.params;
-    
+
+    const access = await assertMarksReadAccess(req, studentId);
+    if (access.status) {
+      return res.status(access.status).json({ success: false, error: access.error });
+    }
     const marks = await Marks.find({ student: studentId })
       .populate('subject', 'credits');
 
@@ -349,6 +420,8 @@ const calculateGPA = async (req, res, next) => {
     // Group records by subject to aggregate across new-format rows
     const subjectMap = new Map();
     marks.forEach(mark => {
+      // Rows whose subject was deleted populate null — skip, never 500.
+      if (!mark.subject) return;
       const subjectId = mark.subject._id.toString();
       if (!subjectMap.has(subjectId)) {
         subjectMap.set(subjectId, { credits: mark.subject.credits || 4, newTotal: 0, hasNew: false, legacy: mark });
@@ -408,26 +481,11 @@ const getGradePoint = (marks) => {
 // @access  Private
 const getMarksByStudent = async (req, res, next) => {
   try {
-    // Check if parent is accessing their linked child's data
-    if (req.user.role === 'PARENT') {
-      const Parent = require('../models/Parent');
-      const parent = await Parent.findOne({ userId: req.user.id });
-      if (!parent || parent.linkedStudent?.toString() !== req.params.studentId) {
-        return res.status(403).json({
-          success: false,
-          error: 'Access denied. You can only view your linked child\'s marks.'
-        });
-      }
+    const access = await assertMarksReadAccess(req, req.params.studentId);
+    if (access.status) {
+      return res.status(access.status).json({ success: false, error: access.error });
     }
-    
     const student = await Student.findById(req.params.studentId);
-    
-    if (!student) {
-      return res.status(404).json({
-        success: false,
-        error: 'Student profile not found'
-      });
-    }
 
     const subjectFilter = {};
     if (req.query.semester) subjectFilter.semester = parseInt(req.query.semester);
@@ -451,6 +509,8 @@ const getMarksByStudent = async (req, res, next) => {
     const subjectMarksMap = {};
     
     marks.forEach(mark => {
+      // Rows whose subject was deleted populate null — skip, never 500.
+      if (!mark.subject) return;
       const subjectId = mark.subject._id.toString();
       
       if (!subjectMarksMap[subjectId]) {

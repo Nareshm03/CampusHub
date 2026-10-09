@@ -153,6 +153,9 @@ const requestBooking = async (req, res, next) => {
 
 // ─── Student: Cancel own booking ─────────────────────────────────────────────
 
+// A booking is cancellable only before check-in. Terminal states
+// (CHECKED_OUT / REJECTED / CANCELLED) are history and must not be
+// rewritten; CHECKED_IN requires admin handling (deallocation first).
 // @route   PUT /api/hostel/booking/:bookingId/cancel
 // @access  Private/Student
 const cancelBooking = async (req, res, next) => {
@@ -167,6 +170,9 @@ const cancelBooking = async (req, res, next) => {
     if (!booking) return res.status(404).json({ success: false, error: 'Booking not found' });
     if (booking.status === 'CHECKED_IN') {
       return res.status(400).json({ success: false, error: 'Cannot cancel a checked-in booking. Contact admin.' });
+    }
+    if (!['PENDING', 'APPROVED'].includes(booking.status)) {
+      return res.status(400).json({ success: false, error: `Cannot cancel a ${booking.status} booking` });
     }
 
     booking.status = 'CANCELLED';
@@ -206,6 +212,9 @@ const getAllBookings = async (req, res, next) => {
 
 // ─── Admin: Approve / reject booking ─────────────────────────────────────────
 
+// Allowed lifecycle: PENDING → APPROVED | REJECTED, APPROVED → CHECKED_IN |
+// REJECTED, CHECKED_IN → CHECKED_OUT. Terminal states (CHECKED_OUT,
+// REJECTED, CANCELLED) never transition — history stays truthful.
 // @route   PUT /api/hostel/admin/bookings/:bookingId
 // @access  Private/Admin
 const updateBookingStatus = async (req, res, next) => {
@@ -219,6 +228,24 @@ const updateBookingStatus = async (req, res, next) => {
     const booking = await HostelBooking.findById(req.params.bookingId);
     if (!booking) return res.status(404).json({ success: false, error: 'Booking not found' });
 
+    // Allowed lifecycle: PENDING → APPROVED | REJECTED | CHECKED_IN
+    // (direct check-in is an asserted admin fast-path), APPROVED →
+    // CHECKED_IN | REJECTED, CHECKED_IN → CHECKED_OUT. Terminal states
+    // (CHECKED_OUT, REJECTED, CANCELLED) never transition — history stays
+    // truthful.
+    const TRANSITIONS = {
+      PENDING: ['APPROVED', 'REJECTED', 'CHECKED_IN'],
+      APPROVED: ['CHECKED_IN', 'REJECTED'],
+      CHECKED_IN: ['CHECKED_OUT'],
+      CHECKED_OUT: [],
+      REJECTED: [],
+      CANCELLED: []
+    };
+    const from = booking.status;
+    if (!(TRANSITIONS[from] || []).includes(status)) {
+      return res.status(400).json({ success: false, error: `Cannot move booking from ${from} to ${status}` });
+    }
+
     booking.status = status;
     if (adminNote) booking.adminNote = adminNote;
 
@@ -227,19 +254,18 @@ const updateBookingStatus = async (req, res, next) => {
       booking.allocatedAt = new Date();
 
       // Add student to room occupants when checked in (capacity enforced,
-      // duplicates compared by id string since these are ObjectId instances)
+      // duplicates compared by id string since these are ObjectId instances).
+      // Occupancy is global: a student occupant in ANY hostel blocks a new
+      // check-in, otherwise cross-hostel double occupancy is possible.
       if (status === 'CHECKED_IN') {
+        const occupied = await Hostel.exists({ 'rooms.occupants': booking.student });
+        if (occupied) {
+          return res.status(400).json({ success: false, error: 'Student is already allocated to a room' });
+        }
         const hostel = await Hostel.findById(booking.hostel);
         const room = hostel?.rooms.find(r => r.number === booking.roomNumber);
         if (!room) {
           return res.status(400).json({ success: false, error: 'Booked room no longer exists' });
-        }
-        const elsewhere = (hostel.rooms || []).some((r) =>
-          r.number !== booking.roomNumber &&
-          (r.occupants || []).some((o) => o.toString() === booking.student.toString())
-        );
-        if (elsewhere) {
-          return res.status(400).json({ success: false, error: 'Student is already allocated to another room' });
         }
         if (!room.occupants.some(o => o.toString() === booking.student.toString())) {
           if (room.occupants.length >= room.capacity) {
@@ -297,11 +323,11 @@ const allocateRoom = async (req, res, next) => {
     if (alreadyHere) {
       return res.status(400).json({ success: false, error: 'Student is already allocated to this room' });
     }
-    const allocatedElsewhere = hostel.rooms.some((r) =>
-      r.number !== roomNumber && (r.occupants || []).some((o) => o.toString() === studentId.toString())
-    );
-    if (allocatedElsewhere) {
-      return res.status(400).json({ success: false, error: 'Student is already allocated to another room in this hostel' });
+    // Global occupancy: block allocation when the student occupies any room
+    // in any hostel (same-hostel check alone allowed cross-hostel doubles).
+    const occupiedAnywhere = await Hostel.exists({ 'rooms.occupants': student._id });
+    if (occupiedAnywhere) {
+      return res.status(400).json({ success: false, error: 'Student is already allocated to a room' });
     }
     if (room.occupants.length >= room.capacity) {
       return res.status(400).json({ success: false, error: 'Room is fully occupied' });

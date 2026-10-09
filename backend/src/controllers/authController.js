@@ -16,6 +16,16 @@ const register = async (req, res, next) => {
   try {
     const { name, email, password, role, department } = req.body;
 
+    // Public self-registration must never create privileged accounts.
+    // Staff (FACULTY/ADMIN) accounts are created by an administrator.
+    const SELF_REGISTER_ROLES = ['STUDENT', 'PARENT'];
+    if (!SELF_REGISTER_ROLES.includes(role)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Self-registration is only available for STUDENT or PARENT accounts. Staff accounts are created by an administrator.'
+      });
+    }
+
     const user = await User.create({
       name,
       email,

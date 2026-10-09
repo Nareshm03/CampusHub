@@ -13,7 +13,7 @@ const {
   getSubjectStats,
   searchSubjects
 } = require('../controllers/subjectController');
-const { protect, authorize } = require('../middleware/auth');
+const { protect, authorize, facultySubjectAccess } = require('../middleware/auth');
 const { requirePermission, RESOURCES, ACTIONS } = require('../middleware/rbac');
 
 const router = express.Router();
@@ -60,11 +60,11 @@ router
 
 router
   .route('/:id/students')
-  .get(protect, authorize('FACULTY', 'ADMIN'), getStudentsBySubject);
+  .get(protect, authorize('FACULTY', 'ADMIN'), facultySubjectAccess, getStudentsBySubject);
 
 router
   .route('/:id/stats')
-  .get(protect, authorize('FACULTY', 'ADMIN'), getSubjectStats);
+  .get(protect, authorize('FACULTY', 'ADMIN'), facultySubjectAccess, getSubjectStats);
 
 router
   .route('/:id')

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import axios from '@/lib/axios';
-import { toast } from 'react-hot-toast';
+import { toast } from 'sonner';
 
 export default function ExamsPage() {
   const [activeTab, setActiveTab] = useState('register');
@@ -72,13 +72,14 @@ export default function ExamsPage() {
 
   const handlePayFee = async (registrationId, fee) => {
     try {
-      // Simulate payment gateway integration
+      // No online exam-payment provider is wired (see backend payExamFee).
+      // Never mint a paymentId client-side: ask the server and surface its
+      // honest unavailable/failed state instead.
       const confirmed = window.confirm(`Pay ₹${fee} for exam registration?`);
       if (!confirmed) return;
-      
-      const paymentId = `PAY${Date.now()}${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
-      await axios.post('/exams/pay-fee', { registrationId, paymentId });
-      
+
+      await axios.post('/exams/pay-fee', { registrationId });
+
       toast.success('Payment successful!');
       fetchData();
     } catch (error) {

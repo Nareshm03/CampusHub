@@ -12,6 +12,7 @@ import {
   AcademicCapIcon
 } from '@heroicons/react/24/outline';
 import api from '../../../../lib/axios';
+import { useAuth } from '../../../../context/AuthContext';
 import { toast } from 'sonner';
 
 const EMPTY_FORM = {
@@ -23,6 +24,10 @@ const EMPTY_FORM = {
 };
 
 export default function FacultyNoticesPage() {
+  const { user } = useAuth();
+  // Notice deletion is ADMIN-only on the backend (noticeRoutes DELETE).
+  // Never render the control for roles that cannot use it.
+  const canDelete = user?.role === 'ADMIN';
   const [notices, setNotices] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -203,12 +208,15 @@ export default function FacultyNoticesPage() {
                       <span>{new Date(notice.createdAt).toLocaleDateString()} {new Date(notice.createdAt).toLocaleTimeString()}</span>
                     </div>
                   </div>
-                  <button
-                    onClick={() => handleDelete(notice._id)}
-                    className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors flex-shrink-0"
-                  >
-                    <TrashIcon className="h-5 w-5" />
-                  </button>
+                  {canDelete && (
+                    <button
+                      onClick={() => handleDelete(notice._id)}
+                      title="Delete notice"
+                      className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors flex-shrink-0"
+                    >
+                      <TrashIcon className="h-5 w-5" />
+                    </button>
+                  )}
                 </div>
               </Card>
             ))}

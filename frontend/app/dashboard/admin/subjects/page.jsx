@@ -32,6 +32,10 @@ export default function AdminSubjectsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterDept, setFilterDept] = useState('');
   const [filterSem, setFilterSem] = useState('');
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, pages: 1 });
+  const [subjectStats, setSubjectStats] = useState({ total: 0, withFaculty: 0, avgCredits: 0 });
+  const PAGE_LIMIT = 20;
   const [formData, setFormData] = useState({
     name: '',
     subjectCode: '',
@@ -45,26 +49,53 @@ export default function AdminSubjectsPage() {
     fetchData();
   }, []);
 
+  useEffect(() => {
+    fetchSubjects();
+  }, [page, filterDept, filterSem]);
+
+  const fetchSubjects = async () => {
+    try {
+      const params = new URLSearchParams({ page: String(page), limit: String(PAGE_LIMIT) });
+      if (filterDept) params.append('department', filterDept);
+      if (filterSem) params.append('semester', filterSem);
+      const subjectsRes = await api.get(`/subjects?${params.toString()}`);
+      setSubjects(subjectsRes.data.data || []);
+      if (subjectsRes.data.pagination) setPagination(subjectsRes.data.pagination);
+      // Global aggregates (not page-scoped) when the backend provides them.
+      if (subjectsRes.data.stats) setSubjectStats(subjectsRes.data.stats);
+    } catch (error) {
+      toast.error('Failed to fetch subjects');
+    }
+  };
+
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [subjectsRes, departmentsRes, facultyRes, studentsRes] = await Promise.all([
-        api.get('/subjects'),
+      const [departmentsRes, facultyRes, studentsRes] = await Promise.all([
         api.get('/departments'),
         api.get('/users/faculty'),
         api.get('/students')
       ]);
-      
-      setSubjects(subjectsRes.data.data || []);
+
       setDepartments(departmentsRes.data.data || []);
       setFaculty(facultyRes.data.data || []);
       setStudents(studentsRes.data.data || []);
+      await fetchSubjects();
     } catch (error) {
       toast.error('Failed to fetch data');
       console.error('Failed to fetch data:', error);
     } finally {
       setLoading(false);
     }
+  };
+
+  // Stable User-id for Subject.faculty (references the User document, not
+  // the Faculty profile): prefer the row's userId, handling both string
+  // and populated shapes.
+  const facultyUserId = (f) => {
+    if (!f) return '';
+    if (typeof f.userId === 'object' && f.userId !== null) return f.userId._id || '';
+    return f.userId || f._id || '';
   };
 
   const handleSubmit = async (e) => {
@@ -81,7 +112,7 @@ export default function AdminSubjectsPage() {
         credits: '',
         faculty: ''
       });
-      fetchData();
+      fetchSubjects();
     } catch (error) {
       toast.error(error.response?.data?.error || 'Failed to create subject');
     }
@@ -102,7 +133,7 @@ export default function AdminSubjectsPage() {
         credits: '',
         faculty: ''
       });
-      fetchData();
+      fetchSubjects();
     } catch (error) {
       toast.error(error.response?.data?.error || 'Failed to update subject');
     }
@@ -110,13 +141,14 @@ export default function AdminSubjectsPage() {
 
   const handleEdit = (subject) => {
     setEditingSubject(subject);
+    const facId = subject.faculty?._id || (typeof subject.faculty === 'string' ? subject.faculty : '');
     setFormData({
       name: subject.name,
       subjectCode: subject.subjectCode,
       department: subject.department?._id || '',
       semester: subject.semester,
       credits: subject.credits || '',
-      faculty: subject.faculty?._id || ''
+      faculty: facId
     });
     setShowEditModal(true);
   };
@@ -126,7 +158,11 @@ export default function AdminSubjectsPage() {
       try {
         await api.delete(`/subjects/${id}`);
         toast.success('Subject deleted successfully!');
-        fetchData();
+        if (subjects.length === 1 && page > 1) {
+          setPage(page - 1);
+        } else {
+          fetchSubjects();
+        }
       } catch (error) {
         toast.error(error.response?.data?.error || 'Failed to delete subject');
       }
@@ -180,10 +216,12 @@ export default function AdminSubjectsPage() {
 
   const getEligibleStudents = () => {
     if (!enrollingSubject) return [];
-    return students.filter(student => 
-      student.department?._id === enrollingSubject.department?._id &&
-      student.semester === enrollingSubject.semester
-    );
+    const deptId = enrollingSubject.department?._id || enrollingSubject.department;
+    return students.filter(student => {
+      const sDept = student.department?._id || student.department;
+      return String(sDept || '') === String(deptId || '') &&
+        Number(student.semester) === Number(enrollingSubject.semester);
+    });
   };
 
   const filteredSubjects = subjects.filter(subject => {
@@ -240,7 +278,7 @@ export default function AdminSubjectsPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-blue-600 dark:text-blue-400">Total Subjects</p>
-                <p className="text-3xl font-bold text-blue-900 dark:text-blue-100 mt-1">{subjects.length}</p>
+                <p className="text-3xl font-bold text-blue-900 dark:text-blue-100 mt-1">{pagination.total}</p>
               </div>
               <BookOpenIcon className="w-8 h-8 text-blue-600" />
             </div>
@@ -261,7 +299,7 @@ export default function AdminSubjectsPage() {
               <div>
                 <p className="text-sm font-medium text-purple-600 dark:text-purple-400">With Faculty</p>
                 <p className="text-3xl font-bold text-purple-900 dark:text-purple-100 mt-1">
-                  {subjects.filter(s => s.faculty).length}
+                  {subjectStats.withFaculty}
                 </p>
               </div>
               <UserGroupIcon className="w-8 h-8 text-purple-600" />
@@ -273,7 +311,7 @@ export default function AdminSubjectsPage() {
               <div>
                 <p className="text-sm font-medium text-amber-600 dark:text-amber-400">Avg. Credits</p>
                 <p className="text-3xl font-bold text-amber-900 dark:text-amber-100 mt-1">
-                  {subjects.length > 0 ? (subjects.reduce((acc, s) => acc + (s.credits || 0), 0) / subjects.length).toFixed(1) : '0'}
+                  {subjectStats.avgCredits}
                 </p>
               </div>
               <AcademicCapIcon className="w-8 h-8 text-amber-600" />
@@ -297,7 +335,7 @@ export default function AdminSubjectsPage() {
 
             <select
               value={filterDept}
-              onChange={(e) => setFilterDept(e.target.value)}
+              onChange={(e) => { setFilterDept(e.target.value); setPage(1); }}
               className="px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="">All Departments</option>
@@ -308,7 +346,7 @@ export default function AdminSubjectsPage() {
 
             <select
               value={filterSem}
-              onChange={(e) => setFilterSem(e.target.value)}
+              onChange={(e) => { setFilterSem(e.target.value); setPage(1); }}
               className="px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="">All Semesters</option>
@@ -407,6 +445,29 @@ export default function AdminSubjectsPage() {
           </div>
         )}
 
+        {/* Pagination */}
+        {pagination.pages > 1 && (
+          <div className="flex items-center justify-center gap-3 mt-8">
+            <Button
+              variant="outline"
+              disabled={page <= 1}
+              onClick={() => setPage(page - 1)}
+            >
+              Previous
+            </Button>
+            <span className="text-sm text-gray-600 dark:text-gray-400">
+              Page {pagination.page} of {pagination.pages} ({pagination.total} subjects)
+            </span>
+            <Button
+              variant="outline"
+              disabled={page >= pagination.pages}
+              onClick={() => setPage(page + 1)}
+            >
+              Next
+            </Button>
+          </div>
+        )}
+
         {/* Add/Edit Modals - keeping original logic */}
         <Modal isOpen={showAddModal} onClose={() => setShowAddModal(false)} title="Add New Subject">
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -480,7 +541,7 @@ export default function AdminSubjectsPage() {
               >
                 <option value="">Select Faculty</option>
                 {faculty.map(f => (
-                  <option key={f._id} value={f.userId || f._id}>{f.name || f.userId?.name || 'Unnamed'}</option>
+                  <option key={f._id} value={facultyUserId(f)}>{f.name || 'Unnamed'}</option>
                 ))}
               </select>
             </div>
@@ -564,7 +625,7 @@ export default function AdminSubjectsPage() {
               >
                 <option value="">Select Faculty</option>
                 {faculty.map(f => (
-                  <option key={f._id} value={f.userId || f._id}>{f.name || f.userId?.name || 'Unnamed'}</option>
+                  <option key={f._id} value={facultyUserId(f)}>{f.name || 'Unnamed'}</option>
                 ))}
               </select>
             </div>
@@ -614,7 +675,7 @@ export default function AdminSubjectsPage() {
                       />
                       <div className="flex-1">
                         <p className="font-medium text-gray-900 dark:text-white">{student.userId?.name}</p>
-                        <p className="text-sm text-gray-600 dark:text-gray-400">{student.rollNumber}</p>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">{student.usn || student.email || ''}</p>
                       </div>
                     </div>
                   ))}

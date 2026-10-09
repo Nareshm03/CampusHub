@@ -385,7 +385,16 @@ exports.submitAssignment = async (req, res) => {
     const now = new Date();
     const isLate = now > assignment.dueDate;
 
-    if (isLate && !assignment.allowLateSubmission && assignment.status === 'CLOSED') {
+    // Submission gate (mirrors homework submit semantics): only PUBLISHED
+    // assignments accept submissions; late work only when allowed.
+    if (assignment.status !== 'PUBLISHED') {
+      return res.status(400).json({
+        success: false,
+        error: 'Assignment is not accepting submissions'
+      });
+    }
+
+    if (isLate && !assignment.allowLateSubmission) {
       return res.status(400).json({
         success: false,
         error: 'Assignment submission deadline has passed'

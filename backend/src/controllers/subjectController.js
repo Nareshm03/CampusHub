@@ -4,15 +4,31 @@ const mongoose = require('mongoose');
 
 const createSubject = async (req, res) => {
   try {
-    const { department, subjectCode } = req.body;
-    
+    const { department, subjectCode, faculty } = req.body;
+
     if (!mongoose.Types.ObjectId.isValid(department)) {
       return res.status(400).json({ success: false, error: 'Invalid department ID format' });
     }
-    
+
     const departmentExists = await Department.findById(department);
     if (!departmentExists) {
       return res.status(400).json({ success: false, error: 'Department not found' });
+    }
+
+    // Subject.faculty references the User document — reject unknown ids and
+    // non-teaching roles instead of storing a dangling/wrong-typed id.
+    if (faculty !== undefined && faculty !== '' && faculty !== null) {
+      if (!mongoose.Types.ObjectId.isValid(faculty)) {
+        return res.status(400).json({ success: false, error: 'Invalid faculty ID format' });
+      }
+      const User = require('../models/User');
+      const facultyUser = await User.findById(faculty).select('role');
+      if (!facultyUser) {
+        return res.status(400).json({ success: false, error: 'Faculty user not found' });
+      }
+      if (!['FACULTY', 'ADMIN'].includes(facultyUser.role)) {
+        return res.status(400).json({ success: false, error: 'Subject faculty must be a FACULTY or ADMIN user' });
+      }
     }
 
     const duplicate = await Subject.findOne({ subjectCode: subjectCode?.trim().toUpperCase() });
@@ -64,11 +80,29 @@ const getAllSubjects = async (req, res) => {
     );
     
     const total = await Subject.countDocuments(filter);
-    
+
+    // Global aggregates (page-independent): with-faculty count and average
+    // credits over the full filter set, so management stats never reflect
+    // only the current page.
+    const [withFaculty, creditAgg] = await Promise.all([
+      Subject.countDocuments({ ...filter, faculty: { $ne: null } }),
+      Subject.aggregate([
+        { $match: filter },
+        { $group: { _id: null, avgCredits: { $avg: '$credits' } } }
+      ])
+    ]);
+
     res.status(200).json({
       success: true,
       data: enrichedSubjects,
-      pagination: { page, limit, total, pages: Math.ceil(total / limit) }
+      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+      stats: {
+        total,
+        withFaculty,
+        avgCredits: creditAgg.length && creditAgg[0].avgCredits != null
+          ? Math.round(creditAgg[0].avgCredits * 10) / 10
+          : 0
+      }
     });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -141,6 +175,33 @@ const updateSubject = async (req, res) => {
     const updateData = { ...req.body };
     if (updateData.faculty === '' || updateData.faculty === null) delete updateData.faculty;
     if (updateData.department === '' || updateData.department === null) delete updateData.department;
+
+    // Same guards as create: renamed codes must not collide, faculty ids
+    // must reference a real teaching user. Absent faculty key = keep current
+    // assignment (explicit unassign lives on PUT /:id/remove-faculty).
+    if (updateData.subjectCode) {
+      const clash = await Subject.findOne({
+        subjectCode: String(updateData.subjectCode).trim().toUpperCase(),
+        _id: { $ne: req.params.id }
+      });
+      if (clash) {
+        return res.status(409).json({ success: false, error: `Subject code '${updateData.subjectCode}' already exists` });
+      }
+      updateData.subjectCode = String(updateData.subjectCode).trim().toUpperCase();
+    }
+    if (updateData.faculty !== undefined) {
+      if (!mongoose.Types.ObjectId.isValid(updateData.faculty)) {
+        return res.status(400).json({ success: false, error: 'Invalid faculty ID format' });
+      }
+      const User = require('../models/User');
+      const facultyUser = await User.findById(updateData.faculty).select('role');
+      if (!facultyUser) {
+        return res.status(400).json({ success: false, error: 'Faculty user not found' });
+      }
+      if (!['FACULTY', 'ADMIN'].includes(facultyUser.role)) {
+        return res.status(400).json({ success: false, error: 'Subject faculty must be a FACULTY or ADMIN user' });
+      }
+    }
     
     const subject = await Subject.findByIdAndUpdate(req.params.id, updateData, {
       new: true,

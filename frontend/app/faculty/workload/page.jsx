@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { toast } from 'react-hot-toast';
+import { toast } from 'sonner';
 import axios from '@/lib/axios';
 import { BarChart, LineChart, PieChart, RadarChart, ProgressRing } from '@/components/Charts';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';

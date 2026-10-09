@@ -16,6 +16,7 @@ export default function ProfileManagement() {
   const [users, setUsers] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [modalType, setModalType] = useState('');
   const [editingProfile, setEditingProfile] = useState(null);
@@ -27,20 +28,22 @@ export default function ProfileManagement() {
 
   const fetchData = async () => {
     try {
+      setLoadError('');
+      // Failures must surface: silent fallbacks would render "no profiles
+      // yet" when the API is actually down.
       const [studentsRes, facultyRes, deptRes] = await Promise.all([
-        api.get('/students').catch(() => ({ data: { data: [] } })),
-        api.get('/faculty').catch(() => ({ data: { data: [] } })),
-        api.get('/departments').catch(() => ({ data: { data: [] } }))
+        api.get('/students'),
+        api.get('/faculty'),
+        api.get('/departments')
       ]);
-      
+
       setStudents(studentsRes.data.data || []);
       setFaculty(facultyRes.data.data || []);
       setDepartments(deptRes.data.data || []);
     } catch (error) {
       console.error('Error fetching data:', error);
-      setStudents([]);
-      setFaculty([]);
-      setDepartments([]);
+      setLoadError(error.response?.data?.error || 'Failed to load profiles. Please retry.');
+      toast.error('Failed to load profiles');
     } finally {
       setLoading(false);
     }
@@ -56,7 +59,7 @@ export default function ProfileManagement() {
           name: profile.userId?.name || '',
           email: profile.userId?.email || '',
           usn: profile.usn,
-          department: profile.department._id,
+          department: profile.department?._id || '',
           semester: profile.semester,
           phone: profile.phone || '',
           address: profile.address || '',
@@ -69,7 +72,7 @@ export default function ProfileManagement() {
           name: profile.userId?.name || '',
           email: profile.userId?.email || '',
           employeeId: profile.employeeId,
-          department: profile.department._id,
+          department: profile.department?._id || '',
           designation: profile.designation,
           qualification: profile.qualification,
           experience: profile.experience,
@@ -159,6 +162,13 @@ export default function ProfileManagement() {
           </p>
         </div>
 
+        {loadError && (
+          <div className="mb-6 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg flex items-center justify-between gap-4">
+            <p className="text-sm text-amber-800 dark:text-amber-200">{loadError}</p>
+            <Button variant="outline" size="sm" onClick={fetchData}>Retry</Button>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           <Card className="p-6">
             <div className="flex items-center justify-between mb-6">
@@ -182,10 +192,10 @@ export default function ProfileManagement() {
                 <div key={student._id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
                   <div>
                     <h3 className="font-medium text-gray-900 dark:text-white">
-                      {student.userId.name}
+                      {student.userId?.name || 'Unknown'}
                     </h3>
                     <p className="text-sm text-gray-600 dark:text-gray-400">
-                      {student.usn} • {student.department.name} • Sem {student.semester}
+                      {student.usn} • {student.department?.name || '—'} • Sem {student.semester}
                     </p>
                   </div>
                   <Button
@@ -228,10 +238,10 @@ export default function ProfileManagement() {
                 <div key={fac._id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
                   <div>
                     <h3 className="font-medium text-gray-900 dark:text-white">
-                      {fac.userId.name}
+                      {fac.userId?.name || 'Unknown'}
                     </h3>
                     <p className="text-sm text-gray-600 dark:text-gray-400">
-                      {fac.employeeId} • {fac.designation} • {fac.department.name}
+                      {fac.employeeId} • {fac.designation} • {fac.department?.name || '—'}
                     </p>
                   </div>
                   <Button
