@@ -3,7 +3,11 @@ const router = express.Router();
 const assignmentController = require('../controllers/assignmentController');
 const { protect, authorize } = require('../middleware/auth');
 const { requirePermission, RESOURCES, ACTIONS } = require('../middleware/rbac');
-const upload = require('../utils/upload');
+const { uploadFor, singleUpload } = require('../utils/stagedUpload');
+// Dedicated staged uploader: assignment files previously reused the student
+// photo uploader (image-only, uploads/students/). New writes are staged and
+// persisted to uploads/assignments/ via the storage adapter.
+const upload = uploadFor('assignments', { files: 5 });
 
 // Assignment routes
 router.post('/',
@@ -52,7 +56,7 @@ router.delete('/:id',
 router.post('/:id/upload',
   protect,
   requirePermission(RESOURCES.HOMEWORK, ACTIONS.UPDATE),
-  upload.array('files', 5),
+  singleUpload(upload.array('files', 5)),
   assignmentController.uploadAssignmentFiles
 );
 
@@ -60,7 +64,7 @@ router.post('/:id/upload',
 router.post('/:id/submit',
   protect,
   authorize('STUDENT'),
-  upload.array('files', 5),
+  singleUpload(upload.array('files', 5)),
   assignmentController.submitAssignment
 );
 

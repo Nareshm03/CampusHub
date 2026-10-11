@@ -4,6 +4,7 @@ const Alumni = require('../models/Alumni');
 const bcrypt = require('bcryptjs');
 const fs = require('fs');
 const path = require('path');
+const { getStorage, persistStagedFile, discardStagedFiles } = require('../utils/storage');
 
 // @desc    Add new student with user account (Admin only)
 // @route   POST /api/students
@@ -268,17 +269,43 @@ const uploadProfilePhoto = async (req, res, next) => {
       });
     }
 
-    // Delete old photo if exists
-    if (student.profilePhoto) {
-      const oldPhotoPath = path.join(__dirname, '../../uploads/students/', student.profilePhoto);
-      if (fs.existsSync(oldPhotoPath)) {
-        fs.unlinkSync(oldPhotoPath);
-      }
+    // Persist the staged upload through the storage adapter first, so a
+    // failed blob/filesystem write never creates a success-looking record.
+    const { storage, config } = getStorage();
+    let saved;
+    try {
+      saved = await persistStagedFile(storage, config, {
+        category: 'students',
+        stagedPath: req.file.path,
+        originalName: req.file.originalname,
+        mimetype: req.file.mimetype,
+      });
+    } catch (err) {
+      discardStagedFiles([req.file]);
+      return res.status(err.status || 500).json({
+        success: false,
+        error: err.message || 'Error uploading profile photo',
+      });
     }
 
-    // Update student with new photo
-    student.profilePhoto = req.file.filename;
-    await student.save();
+    const previousPhoto = student.profilePhoto;
+    student.profilePhoto = saved.filename;
+    try {
+      await student.save();
+    } catch (err) {
+      // Compensate: DB write failed after the object was stored.
+      try {
+        await storage.delete({ category: 'students', filename: saved.filename });
+      } catch (_) {}
+      return next(err);
+    }
+
+    // Delete old photo if exists (best-effort; a missing file is fine).
+    if (previousPhoto && previousPhoto !== saved.filename) {
+      try {
+        await storage.delete({ category: 'students', filename: previousPhoto, storedPath: previousPhoto });
+      } catch (_) {}
+    }
 
     res.status(200).json({
       success: true,
@@ -287,10 +314,8 @@ const uploadProfilePhoto = async (req, res, next) => {
       }
     });
   } catch (error) {
-    // Clean up uploaded file on error
-    if (req.file && fs.existsSync(req.file.path)) {
-      fs.unlinkSync(req.file.path);
-    }
+    // Clean up staged upload file on error
+    if (req.file) discardStagedFiles([req.file]);
     next(error);
   }
 };

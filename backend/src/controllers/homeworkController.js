@@ -1,49 +1,21 @@
 const Homework = require('../models/Homework');
 const Submission = require('../models/Submission');
 const mongoose = require('mongoose');
-const multer = require('multer');
-const path = require('path');
-const fs = require('fs').promises;
 const { checkPlagiarism } = require('../utils/plagiarismDetector');
 const AuditLogger = require('../utils/auditLogger');
+const { uploadFor } = require('../utils/stagedUpload');
+const {
+  getStorage,
+  persistStagedFiles,
+  discardStagedFiles,
+  lookupContentType,
+  StorageError,
+} = require('../utils/storage');
 
-// Configure multer for file uploads
-const storage = multer.diskStorage({
-  destination: async (req, file, cb) => {
-    const uploadDir = path.join(__dirname, '../../uploads/homework');
-    try {
-      await fs.mkdir(uploadDir, { recursive: true });
-      cb(null, uploadDir);
-    } catch (error) {
-      cb(error);
-    }
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, uniqueSuffix + '-' + file.originalname);
-  }
-});
-
-const fileFilter = (req, file, cb) => {
-  const allowedTypes = ['application/pdf', 'application/msword', 
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'text/plain', 'image/jpeg', 'image/png', 'application/zip', 
-    'application/x-rar-compressed'];
-  
-  if (allowedTypes.includes(file.mimetype)) {
-    cb(null, true);
-  } else {
-    cb(new Error('Invalid file type. Allowed types: PDF, DOC, DOCX, TXT, JPG, PNG, ZIP, RAR'), false);
-  }
-};
-
-const upload = multer({
-  storage,
-  fileFilter,
-  limits: {
-    fileSize: 10 * 1024 * 1024 // 10MB
-  }
-});
+// Staged homework upload (10MB, PDF/DOC/DOCX/TXT/JPG/PNG/ZIP/RAR). The
+// controller persists staged files through the storage adapter; validation
+// is unchanged.
+const upload = uploadFor('homework', { files: 5 });
 
 /**
  * Create new homework assignment
@@ -87,18 +59,51 @@ exports.createHomework = async (req, res) => {
       plagiarismThreshold
     });
 
-    // Handle file attachments if any
+    // Persist staged attachments through the adapter BEFORE saving, so a
+    // failed write never creates a success-looking record.
+    let savedAttachments = [];
     if (req.files && req.files.length > 0) {
-      homework.attachments = req.files.map(file => ({
-        filename: file.filename,
-        originalName: file.originalname,
-        path: file.path,
-        mimetype: file.mimetype,
-        size: file.size
+      const { storage, config } = getStorage();
+      try {
+        savedAttachments = await persistStagedFiles(
+          storage,
+          config,
+          req.files.map((file) => ({
+            category: 'homework',
+            stagedPath: file.path,
+            originalName: file.originalname,
+            mimetype: file.mimetype,
+          }))
+        );
+      } catch (err) {
+        discardStagedFiles(req.files);
+        return res.status(err.status || 500).json({
+          success: false,
+          message: err.message || 'Error uploading attachments',
+        });
+      }
+      homework.attachments = savedAttachments.map((s) => ({
+        filename: s.filename,
+        originalName: s.originalName,
+        path: `uploads/homework/${s.filename}`,
+        mimetype: s.mimetype,
+        size: s.size,
       }));
     }
 
-    await homework.save();
+    try {
+      await homework.save();
+    } catch (dbError) {
+      if (savedAttachments.length > 0) {
+        const { storage } = getStorage();
+        for (const s of savedAttachments) {
+          try {
+            await storage.delete({ category: 'homework', filename: s.filename });
+          } catch (_) {}
+        }
+      }
+      throw dbError;
+    }
     await homework.populate('course faculty department');
 
     res.status(201).json({
@@ -274,11 +279,16 @@ exports.deleteHomework = async (req, res) => {
       });
     }
 
-    // Delete associated files
+    // Delete associated files through the adapter (missing is fine).
     if (homework.attachments && homework.attachments.length > 0) {
+      const { storage } = getStorage();
       for (const attachment of homework.attachments) {
         try {
-          await fs.unlink(attachment.path);
+          await storage.delete({
+            category: 'homework',
+            filename: attachment.filename,
+            storedPath: attachment.path,
+          });
         } catch (err) {
           console.error('Error deleting file:', err);
         }
@@ -362,18 +372,50 @@ exports.submitHomework = async (req, res) => {
       previousSubmission: existingSubmission ? existingSubmission._id : null
     });
 
-    // Handle file uploads
+    // Persist staged submission files through the adapter BEFORE saving.
+    let savedFiles = [];
     if (req.files && req.files.length > 0) {
-      submission.files = req.files.map(file => ({
-        filename: file.filename,
-        originalName: file.originalname,
-        path: file.path,
-        mimetype: file.mimetype,
-        size: file.size
+      const { storage, config } = getStorage();
+      try {
+        savedFiles = await persistStagedFiles(
+          storage,
+          config,
+          req.files.map((file) => ({
+            category: 'homework',
+            stagedPath: file.path,
+            originalName: file.originalname,
+            mimetype: file.mimetype,
+          }))
+        );
+      } catch (err) {
+        discardStagedFiles(req.files);
+        return res.status(err.status || 500).json({
+          success: false,
+          message: err.message || 'Error uploading submission files',
+        });
+      }
+      submission.files = savedFiles.map((s) => ({
+        filename: s.filename,
+        originalName: s.originalName,
+        path: `uploads/homework/${s.filename}`,
+        mimetype: s.mimetype,
+        size: s.size,
       }));
     }
 
-    await submission.save();
+    try {
+      await submission.save();
+    } catch (dbError) {
+      if (savedFiles.length > 0) {
+        const { storage } = getStorage();
+        for (const s of savedFiles) {
+          try {
+            await storage.delete({ category: 'homework', filename: s.filename });
+          } catch (_) {}
+        }
+      }
+      throw dbError;
+    }
 
     // Update homework submission count
     homework.submissionCount += 1;
@@ -676,7 +718,37 @@ exports.downloadSubmissionFile = async (req, res) => {
       });
     }
 
-    res.download(file.path, file.originalName);
+    // Stream the private object through the API only after the ownership
+    // gate above has passed. Legacy absolute paths still resolve.
+    const { storage } = getStorage();
+    let stored;
+    try {
+      stored = await storage.get({
+        category: 'homework',
+        filename: file.filename,
+        storedPath: file.path,
+      });
+    } catch (err) {
+      if (err instanceof StorageError && err.code === 'NOT_FOUND') {
+        return res.status(404).json({ success: false, message: 'File not found' });
+      }
+      throw err;
+    }
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${String(file.originalName).replace(/["\r\n]/g, '')}"`
+    );
+    res.setHeader('Content-Type', file.mimetype || stored.contentType || lookupContentType(file.filename));
+    if (typeof stored.bytes === 'number') res.setHeader('Content-Length', String(stored.bytes));
+    stored.stream.on('error', (streamErr) => {
+      console.error('Download file error:', streamErr);
+      if (!res.headersSent) {
+        res.status(500).json({ success: false, message: 'Error downloading file' });
+      } else {
+        res.end();
+      }
+    });
+    return stored.stream.pipe(res);
   } catch (error) {
     console.error('Download file error:', error);
     res.status(500).json({

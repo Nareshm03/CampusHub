@@ -1,2 +1,9 @@
 .vercel
 node_modules
+
+# Environment variables (managed in Vercel dashboard / local only — never commit)
+.env
+.env.local
+.env.*.local
+.env.production
+.env.production.local

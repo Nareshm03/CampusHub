@@ -1,57 +1,17 @@
 const DigitalBook = require('../models/DigitalBook');
-const multer = require('multer');
 const path = require('path');
-const fs = require('fs').promises;
+const { uploadFor, singleUpload } = require('../utils/stagedUpload');
+const {
+  getStorage,
+  persistStagedFile,
+  discardStagedFiles,
+  lookupContentType,
+  StorageError,
+} = require('../utils/storage');
 
-// Configure multer for e-book uploads
-const storage = multer.diskStorage({
-  destination: async (req, file, cb) => {
-    const uploadDir = path.join(__dirname, '../../uploads/ebooks');
-    try {
-      await fs.mkdir(uploadDir, { recursive: true });
-      cb(null, uploadDir);
-    } catch (error) {
-      cb(error);
-    }
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, 'ebook-' + uniqueSuffix + path.extname(file.originalname));
-  }
-});
-
-const fileFilter = (req, file, cb) => {
-  const allowedTypes = ['.pdf', '.epub', '.mobi', '.txt'];
-  const ext = path.extname(file.originalname).toLowerCase();
-  
-  if (allowedTypes.includes(ext)) {
-    cb(null, true);
-  } else {
-    cb(new Error('Invalid file type. Only PDF, EPUB, MOBI, and TXT files are allowed.'));
-  }
-};
-
-const upload = multer({
-  storage: storage,
-  fileFilter: fileFilter,
-  limits: {
-    fileSize: 100 * 1024 * 1024 // 100MB max file size
-  }
-});
-
-// Wrap a multer single-file middleware so client-caused upload failures
-// (wrong type, too large) return 400 instead of falling through to a 500.
-const singleUpload = (middleware) => (req, res, next) => {
-  middleware(req, res, (err) => {
-    if (err) {
-      return res.status(400).json({
-        success: false,
-        message: err.message || 'File upload failed'
-      });
-    }
-    next();
-  });
-};
+// Staged e-book upload (100MB, PDF/EPUB/MOBI/TXT). The controller persists
+// the staged file through the storage adapter; validation is unchanged.
+const upload = uploadFor('ebooks');
 
 // Upload digital book
 exports.uploadBook = [
@@ -90,7 +50,26 @@ exports.uploadBook = [
       } = req.body;
 
       const fileType = path.extname(req.file.originalname).toUpperCase().substring(1);
-      const fileUrl = `/uploads/ebooks/${req.file.filename}`;
+
+      // Persist through the adapter BEFORE creating the DB record. A failed
+      // blob/filesystem write returns an honest error with no record.
+      const { storage, config } = getStorage();
+      let saved;
+      try {
+        saved = await persistStagedFile(storage, config, {
+          category: 'ebooks',
+          stagedPath: req.file.path,
+          originalName: req.file.originalname,
+          mimetype: req.file.mimetype,
+        });
+      } catch (err) {
+        discardStagedFiles([req.file]);
+        return res.status(err.status || 500).json({
+          success: false,
+          message: err.message || 'Error uploading book',
+        });
+      }
+      const fileUrl = `/uploads/ebooks/${saved.filename}`;
 
       const book = new DigitalBook({
         title,
@@ -105,7 +84,7 @@ exports.uploadBook = [
         semester,
         fileType,
         fileUrl,
-        fileSize: req.file.size,
+        fileSize: saved.size,
         totalPages: totalPages || null,
         accessType: accessType || 'Students Only',
         allowedDepartments: allowedDepartments ? JSON.parse(allowedDepartments) : [],
@@ -121,7 +100,17 @@ exports.uploadBook = [
         status: req.user.role === 'ADMIN' ? 'Active' : 'Pending Review'
       });
 
-      await book.save();
+      try {
+        await book.save();
+      } catch (dbError) {
+        // Compensate: DB write failed after the object was stored.
+        try {
+          const { parseStoredRef } = require('../utils/storage');
+          const ref = parseStoredRef(fileUrl);
+          if (ref) await storage.delete({ category: ref.category, filename: ref.filename });
+        } catch (_) {}
+        throw dbError;
+      }
 
       res.status(201).json({
         success: true,
@@ -139,35 +128,8 @@ exports.uploadBook = [
   }
 ];
 
-// Upload cover image
-const coverUpload = multer({
-  storage: multer.diskStorage({
-      destination: async (req, file, cb) => {
-        const uploadDir = path.join(__dirname, '../../uploads/book-covers');
-        try {
-          await fs.mkdir(uploadDir, { recursive: true });
-          cb(null, uploadDir);
-        } catch (error) {
-          cb(error);
-        }
-      },
-      filename: (req, file, cb) => {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        cb(null, 'cover-' + uniqueSuffix + path.extname(file.originalname));
-      }
-    }),
-    fileFilter: (req, file, cb) => {
-      const allowedTypes = ['.jpg', '.jpeg', '.png', '.webp'];
-      const ext = path.extname(file.originalname).toLowerCase();
-      
-      if (allowedTypes.includes(ext)) {
-        cb(null, true);
-      } else {
-        cb(new Error('Invalid file type. Only images are allowed.'));
-      }
-    },
-    limits: { fileSize: 5 * 1024 * 1024 } // 5MB
-  });
+// Upload cover image (5MB images, staged then persisted via adapter).
+const coverUpload = uploadFor('book-covers');
 
 exports.uploadCoverImage = [
   singleUpload(coverUpload.single('cover')),
@@ -177,6 +139,7 @@ exports.uploadCoverImage = [
       const book = await DigitalBook.findById(bookId);
 
       if (!book) {
+        if (req.file) discardStagedFiles([req.file]);
         return res.status(404).json({
           success: false,
           message: 'Book not found'
@@ -185,6 +148,7 @@ exports.uploadCoverImage = [
 
       // Check permission
       if (book.uploadedBy.toString() !== req.user._id.toString() && req.user.role !== 'ADMIN') {
+        if (req.file) discardStagedFiles([req.file]);
         return res.status(403).json({
           success: false,
           message: 'Not authorized to update this book'
@@ -198,8 +162,40 @@ exports.uploadCoverImage = [
         });
       }
 
-      book.coverImage = `/uploads/book-covers/${req.file.filename}`;
-      await book.save();
+      const { storage, config } = getStorage();
+      let saved;
+      try {
+        saved = await persistStagedFile(storage, config, {
+          category: 'book-covers',
+          stagedPath: req.file.path,
+          originalName: req.file.originalname,
+          mimetype: req.file.mimetype,
+        });
+      } catch (err) {
+        discardStagedFiles([req.file]);
+        return res.status(err.status || 500).json({
+          success: false,
+          message: err.message || 'Error uploading cover image',
+        });
+      }
+
+      const previousCover = book.coverImage;
+      book.coverImage = `/uploads/book-covers/${saved.filename}`;
+      try {
+        await book.save();
+      } catch (dbError) {
+        try {
+          await storage.delete({ category: 'book-covers', filename: saved.filename });
+        } catch (_) {}
+        throw dbError;
+      }
+      if (previousCover && previousCover !== book.coverImage) {
+        try {
+          const { parseStoredRef } = require('../utils/storage');
+          const ref = parseStoredRef(previousCover);
+          if (ref) await storage.delete({ category: ref.category, filename: ref.filename });
+        } catch (_) {}
+      }
 
       res.json({
         success: true,
@@ -637,17 +633,38 @@ exports.downloadBook = async (req, res) => {
     book.incrementDownloads();
     await book.save();
 
-    const filePath = path.join(__dirname, '../..', book.fileUrl);
-    
-    res.download(filePath, `${book.title}.${book.fileType.toLowerCase()}`, (error) => {
-      if (error) {
-        console.error('Download error:', error);
-        res.status(500).json({
-          success: false,
-          message: 'Error downloading file'
-        });
+    // Stream the private object through the API only after the access and
+    // download gates above have passed. No raw storage URL is exposed.
+    const { storage } = getStorage();
+    const { parseStoredRef } = require('../utils/storage');
+    const ref = parseStoredRef(book.fileUrl);
+    if (!ref) {
+      return res.status(404).json({ success: false, message: 'Book file reference is invalid' });
+    }
+    let file;
+    try {
+      file = await storage.get({ category: ref.category, filename: ref.filename });
+    } catch (err) {
+      if (err instanceof StorageError && err.code === 'NOT_FOUND') {
+        return res.status(404).json({ success: false, message: 'Book file not found' });
+      }
+      throw err;
+    }
+    res.setHeader('Content-Type', file.contentType || lookupContentType(ref.filename));
+    if (typeof file.bytes === 'number') res.setHeader('Content-Length', String(file.bytes));
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${String(book.title).replace(/["\r\n]/g, '')}.${book.fileType.toLowerCase()}"`
+    );
+    file.stream.on('error', (error) => {
+      console.error('Download error:', error);
+      if (!res.headersSent) {
+        res.status(500).json({ success: false, message: 'Error downloading file' });
+      } else {
+        res.end();
       }
     });
+    return file.stream.pipe(res);
   } catch (error) {
     console.error('Download book error:', error);
     res.status(500).json({
@@ -735,22 +752,18 @@ exports.deleteBook = async (req, res) => {
       });
     }
 
-    // Delete file
+    // Delete file + cover through the adapter (missing objects are fine).
     try {
-      const filePath = path.join(__dirname, '../..', book.fileUrl);
-      await fs.unlink(filePath);
-    } catch (error) {
-      console.error('Error deleting file:', error);
-    }
-
-    // Delete cover image
-    if (book.coverImage) {
-      try {
-        const coverPath = path.join(__dirname, '../..', book.coverImage);
-        await fs.unlink(coverPath);
-      } catch (error) {
-        console.error('Error deleting cover:', error);
+      const { parseStoredRef } = require('../utils/storage');
+      const { storage } = getStorage();
+      const ref = parseStoredRef(book.fileUrl);
+      if (ref) await storage.delete({ category: ref.category, filename: ref.filename });
+      if (book.coverImage) {
+        const coverRef = parseStoredRef(book.coverImage);
+        if (coverRef) await storage.delete({ category: coverRef.category, filename: coverRef.filename });
       }
+    } catch (error) {
+      console.error('Error deleting files:', error);
     }
 
     await book.deleteOne();

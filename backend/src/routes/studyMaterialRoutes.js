@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { authenticateToken, adminOrFaculty, authorize } = require('../middleware/auth');
 const studyMaterialUpload = require('../utils/studyMaterialUpload');
+const { singleUpload } = require('../utils/stagedUpload');
 const {
   uploadMaterials,
   getMaterials,
@@ -22,7 +23,7 @@ router.get('/analytics', adminOrFaculty, getAnalytics);
 
 // List & upload
 router.get('/', getMaterials);
-router.post('/', adminOrFaculty, studyMaterialUpload.array('files', 10), uploadMaterials);
+router.post('/', adminOrFaculty, singleUpload(studyMaterialUpload.array('files', 10)), uploadMaterials);
 
 // Single material
 router.get('/:id', getMaterial);
@@ -31,7 +32,7 @@ router.delete('/:id', adminOrFaculty, deleteMaterial);
 
 // File management
 router.get('/:id/download/:filename', downloadFile);
-router.post('/:id/files', adminOrFaculty, studyMaterialUpload.array('files', 10), addFiles);
+router.post('/:id/files', adminOrFaculty, singleUpload(studyMaterialUpload.array('files', 10)), addFiles);
 router.delete('/:id/files/:filename', adminOrFaculty, removeFile);
 
 module.exports = router;
