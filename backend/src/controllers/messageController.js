@@ -1,6 +1,21 @@
 const Message = require('../models/Message');
 const User = require('../models/User');
 
+// Parent contact policy (most restrictive supported contract): a PARENT may
+// contact staff (FACULTY/ADMIN) about their child, plus reply within an
+// already-existing thread (history continuity). Staff/student/admin flows
+// are unchanged. The same check guards HTTP and Socket sends — neither
+// layer trusts the client.
+const canParentContact = async (parentUserId, receiverId) => {
+  const receiver = await User.findById(receiverId).select('role');
+  if (!receiver) return { ok: false, status: 404, error: 'Receiver not found' };
+  if (['FACULTY', 'ADMIN'].includes(receiver.role)) return { ok: true };
+  const conversationId = Message.getConversationId(parentUserId, receiverId);
+  const existing = await Message.exists({ conversation: conversationId });
+  if (existing) return { ok: true };
+  return { ok: false, status: 403, error: 'Parents may only message faculty or admin staff' };
+};
+
 /**
  * @desc    Get conversation history between two users
  * @route   GET /api/v1/messages/:userId
@@ -156,6 +171,13 @@ exports.sendMessage = async (req, res, next) => {
     const { userId } = req.params;
     const { content, type = 'text' } = req.body;
 
+    if (!content || typeof content !== 'string' || !content.trim()) {
+      return res.status(400).json({ success: false, error: 'Message content is required' });
+    }
+    if (content.length > 5000) {
+      return res.status(400).json({ success: false, error: 'Message is too long' });
+    }
+
     // Validate receiver exists
     const receiver = await User.findById(userId);
     if (!receiver) {
@@ -163,6 +185,13 @@ exports.sendMessage = async (req, res, next) => {
         success: false,
         error: 'Receiver not found'
       });
+    }
+
+    if (req.user.role === 'PARENT') {
+      const allowed = await canParentContact(req.user.id, userId);
+      if (!allowed.ok) {
+        return res.status(allowed.status).json({ success: false, error: allowed.error });
+      }
     }
 
     const conversationId = Message.getConversationId(req.user.id, userId);
@@ -219,6 +248,8 @@ exports.deleteMessage = async (req, res, next) => {
   }
 };
 
+module.exports.canParentContact = canParentContact;
+
 /**
  * @desc    Search users for messaging
  * @route   GET /api/v1/messages/users/search
@@ -235,8 +266,12 @@ exports.searchUsers = async (req, res, next) => {
       });
     }
 
+    // Parents discover staff only (see canParentContact); everyone else
+    // keeps the existing directory behavior.
+    const roleFilter = req.user.role === 'PARENT' ? { role: { $in: ['FACULTY', 'ADMIN'] } } : {};
     const users = await User.find({
       _id: { $ne: req.user.id }, // Exclude current user
+      ...roleFilter,
       $or: [
         { name: { $regex: query, $options: 'i' } },
         { email: { $regex: query, $options: 'i' } }

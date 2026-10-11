@@ -74,10 +74,24 @@ const discussionLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Rate limiter for parent link requests (USN-guessing protection)
+const linkRequestLimiter = rateLimit({
+  store: getStore(),
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 10, // Limit each IP to 10 link requests per hour
+  message: {
+    success: false,
+    error: 'Too many link requests, please try again later.'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 module.exports = {
   authLimiter,
   apiLimiter,
   passwordResetLimiter,
   uploadLimiter,
-  discussionLimiter
+  discussionLimiter,
+  linkRequestLimiter
 };

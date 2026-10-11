@@ -352,9 +352,28 @@ const markAsAlumni = async (req, res, next) => {
     }
 
     if (student.isAlumni) {
-      return res.status(400).json({
-        success: false,
-        error: 'Student is already marked as alumni'
+      // Idempotent retry: a previous attempt may have flagged the student
+      // but failed before creating the Alumni profile. Complete it instead
+      // of failing, and never create a duplicate profile.
+      const Alumni = require('../models/Alumni');
+      const existing = await Alumni.findOne({ studentId: student._id });
+      if (existing) {
+        return res.status(400).json({
+          success: false,
+          error: 'Student is already marked as alumni'
+        });
+      }
+      const recovered = await Alumni.create({
+        studentId: student._id,
+        graduationYear: student.graduationYear || graduationYear,
+        currentCompany: currentCompany?.trim() || '',
+        currentPosition: currentPosition?.trim() || '',
+        contactEmail: contactEmail?.trim() || '',
+        contactPhone: contactPhone?.trim() || ''
+      });
+      return res.status(200).json({
+        success: true,
+        data: { student, alumni: recovered, recovered: true }
       });
     }
 
@@ -363,15 +382,36 @@ const markAsAlumni = async (req, res, next) => {
     student.graduationYear = graduationYear;
     await student.save();
 
-    // Create alumni record
-    const alumni = await Alumni.create({
-      studentId: student._id,
-      graduationYear,
-      currentCompany: currentCompany?.trim() || '',
-      currentPosition: currentPosition?.trim() || '',
-      contactEmail: contactEmail?.trim() || '',
-      contactPhone: contactPhone?.trim() || ''
-    });
+    // Create alumni record. If this write fails after the flag above was
+    // persisted, compensate by clearing the flag so a retry starts clean
+    // (no transactions: the deployment target may not run a replica set).
+    // Duplicate-key races resolve through the idempotent branch above.
+    const Alumni = require('../models/Alumni');
+    let alumni;
+    try {
+      alumni = await Alumni.create({
+        studentId: student._id,
+        graduationYear,
+        currentCompany: currentCompany?.trim() || '',
+        currentPosition: currentPosition?.trim() || '',
+        contactEmail: contactEmail?.trim() || '',
+        contactPhone: contactPhone?.trim() || ''
+      });
+    } catch (createError) {
+      if (createError && createError.code === 11000) {
+        const existing = await Alumni.findOne({ studentId: student._id });
+        if (existing) {
+          return res.status(400).json({
+            success: false,
+            error: 'Student is already marked as alumni'
+          });
+        }
+      }
+      student.isAlumni = false;
+      student.graduationYear = undefined;
+      await student.save();
+      throw createError;
+    }
 
     res.status(200).json({
       success: true,

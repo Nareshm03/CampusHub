@@ -269,7 +269,16 @@ const createPaymentIntent = async (req, res, next) => {
 
     if (req.user.role !== 'ADMIN') {
       const ownProfile = await Student.findOne({ userId: req.user.id }).select('_id');
-      if (!ownProfile || fee.student._id.toString() !== ownProfile._id.toString()) {
+      const isOwner = ownProfile && fee.student._id.toString() === ownProfile._id.toString();
+      // Parents pay only for their approved linked child, resolved
+      // server-side from the authenticated user — never from client ids.
+      let isLinkedParent = false;
+      if (req.user.role === 'PARENT') {
+        const parent = await User.findById(req.user.id).select('linkedStudentId');
+        isLinkedParent = !!parent?.linkedStudentId
+          && fee.student._id.toString() === parent.linkedStudentId.toString();
+      }
+      if (!isOwner && !isLinkedParent) {
         return res.status(403).json({ success: false, error: 'Access denied to this fee record' });
       }
     }

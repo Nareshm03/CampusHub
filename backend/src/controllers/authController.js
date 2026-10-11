@@ -98,7 +98,8 @@ const login = async (req, res, next) => {
       });
 
       if (!verified) {
-        await logSecurityEvent('2FA_FAILED', user._id, { token: twoFactorToken });
+        // Never log the OTP value itself — record the failure only.
+        await logSecurityEvent('2FA_FAILED', user._id, { reason: 'Invalid 2FA token' });
         return res.status(401).json({ success: false, error: 'Invalid 2FA token' });
       }
 
