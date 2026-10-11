@@ -46,9 +46,11 @@ const UserSchema = new mongoose.Schema({
   linkedStudentId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Student',
-    required: function() {
-      return this.role === 'PARENT';
-    }
+    // Deliberately NOT required: a parent registers first and links to a
+    // child afterwards through the admin-approved link-request workflow.
+    // Unlinked parents can authenticate but cannot access any student data
+    // (every parent read resolves through resolveLinkedStudent).
+    default: null
   },
   phone: {
     type: String,

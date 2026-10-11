@@ -1,4 +1,5 @@
 const AuditLog = require('../models/AuditLog');
+const { redact } = require('./redact');
 
 /**
  * Enterprise-grade Audit Logging Utility
@@ -13,7 +14,13 @@ class AuditLogger {
    */
   static async log(logData) {
     try {
-      const auditLog = new AuditLog(logData);
+      // Defense in depth: no caller path may persist secrets. Details,
+      // metadata and change-sets are redacted at the single choke point.
+      const safe = { ...logData };
+      if (safe.details !== undefined) safe.details = redact(safe.details);
+      if (safe.metadata !== undefined) safe.metadata = redact(safe.metadata);
+      if (safe.changes !== undefined) safe.changes = redact(safe.changes);
+      const auditLog = new AuditLog(safe);
       await auditLog.save();
       return auditLog;
     } catch (error) {

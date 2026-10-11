@@ -1,4 +1,5 @@
 const AuditLogger = require('../utils/auditLogger');
+const { redact } = require('../utils/redact');
 
 // Middleware: auto-log any route action after response
 const auditLogger = (action, severity = 'LOW') => {
@@ -11,12 +12,13 @@ const auditLogger = (action, severity = 'LOW') => {
           await AuditLogger.log({
             userId: req.user?.id,
             action,
+            entityType: 'System',
             resource: req.originalUrl,
-            details: {
+            // Stored under metadata (a real schema path): bodies may carry
+            // passwords, tokens or OTP codes, so they are redacted first.
+            metadata: {
               method: req.method,
-              body: req.method !== 'GET' ? req.body : undefined,
-              params: req.params,
-              query: req.query,
+              requestBody: req.method !== 'GET' ? redact(req.body) : undefined,
               statusCode: res.statusCode
             },
             ip: req.ip || req.connection?.remoteAddress,

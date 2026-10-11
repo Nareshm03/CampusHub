@@ -97,6 +97,17 @@ const initializeSocket = (server) => {
           return;
         }
 
+        // Same parent contact policy as the HTTP send path — the socket
+        // must never be a bypass around it.
+        if (socket.user.role === 'PARENT') {
+          const { canParentContact } = require('../controllers/messageController');
+          const allowed = await canParentContact(socket.userId, receiverId);
+          if (!allowed.ok) {
+            socket.emit('error', { message: allowed.error });
+            return;
+          }
+        }
+
         const conversationId = Message.getConversationId(socket.userId, receiverId);
 
         // Create message in database

@@ -14,15 +14,21 @@ const {
   exportAttendanceReport,
   exportPerformanceReport,
   getParentsCount,
-  getAllParents
+  getAllParents,
+  myLinkRequests,
+  listLinkRequests,
+  reviewLinkRequest
 } = require('../controllers/parentController');
 const { protect, authorize } = require('../middleware/auth');
+const { linkRequestLimiter } = require('../middleware/rateLimiter');
 
 const router = express.Router();
 
 // Admin routes
 router.get('/count', protect, authorize('ADMIN'), getParentsCount);
 router.get('/all', protect, authorize('ADMIN'), getAllParents);
+router.get('/link-requests', protect, authorize('ADMIN'), listLinkRequests);
+router.put('/link-requests/:id/review', protect, authorize('ADMIN'), reviewLinkRequest);
 
 // All routes below require authentication and PARENT role
 router.use(protect, authorize('PARENT'));
@@ -39,6 +45,7 @@ router.get('/child/exams', getChildExams);
 router.get('/child/performance/export', exportPerformanceReport);
 router.get('/child/fees', getChildFees);
 router.get('/notices', getParentNotices);
-router.post('/link-student', linkStudent);
+router.post('/link-student', linkRequestLimiter, linkStudent);
+router.get('/link-requests/mine', myLinkRequests);
 
 module.exports = router;

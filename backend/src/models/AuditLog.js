@@ -121,14 +121,24 @@ const auditLogSchema = new mongoose.Schema({
     ipAddress: String,
     userAgent: String,
     sessionId: String,
-    
+
     // Action-specific metadata
     batchSize: Number,
     affectedCount: Number,
     duration: Number,
-    
+
     reason: String,
-    notes: String
+    notes: String,
+
+    // Generic middleware context (request bodies stored here are redacted
+    // before persistence — see utils/redact).
+    method: String,
+    statusCode: Number,
+    role: String,
+    requestBody: {
+      type: mongoose.Schema.Types.Mixed,
+      default: undefined
+    }
   },
 
   // Status and flags
