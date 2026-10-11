@@ -104,6 +104,23 @@ const validateProductionEnv = (env = process.env) => {
 
   expiryProblems(env.JWT_EXPIRE).forEach((p) => errors.push(`JWT_EXPIRE ${p}.`));
 
+  // File storage: local needs nothing extra. Azure must name a real account
+  // (+ optional private container); without it the adapter refuses to serve
+  // files rather than silently falling back to local disk.
+  const provider = String(env.FILE_STORAGE_PROVIDER || 'local').toLowerCase();
+  if (provider !== 'local' && provider !== 'azure') {
+    errors.push('FILE_STORAGE_PROVIDER must be "local" or "azure".');
+  }
+  if (provider === 'azure') {
+    if (!env.AZURE_STORAGE_ACCOUNT_NAME || !String(env.AZURE_STORAGE_ACCOUNT_NAME).trim()) {
+      errors.push('AZURE_STORAGE_ACCOUNT_NAME must be set when FILE_STORAGE_PROVIDER=azure.');
+    }
+    const container = String(env.AZURE_STORAGE_CONTAINER || 'campushub-private').trim();
+    if (!/^[a-z0-9]([a-z0-9-]{1,61}[a-z0-9])?$/.test(container)) {
+      errors.push('AZURE_STORAGE_CONTAINER must be a valid container name (lowercase, 3-63 chars).');
+    }
+  }
+
   return errors;
 };
 

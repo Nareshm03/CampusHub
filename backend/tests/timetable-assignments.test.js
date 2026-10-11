@@ -77,8 +77,16 @@ describe('assignments', () => {
     const list = await request(app).get('/api/v1/assignments').set(authHeader(owner));
     expect(list.status).toBe(200);
 
-    const uploadDir = path.join(__dirname, '..', 'uploads', 'students');
-    const beforeFiles = new Set(fs.existsSync(uploadDir) ? fs.readdirSync(uploadDir) : []);
+    // Assignment files persist to uploads/assignments/ via the storage
+    // adapter (they previously leaked into uploads/students/ through the
+    // reused photo uploader). Watch both so cleanup stays exact.
+    const uploadDirs = [
+      path.join(__dirname, '..', 'uploads', 'assignments'),
+      path.join(__dirname, '..', 'uploads', 'students'),
+    ];
+    const beforeFiles = new Map(
+      uploadDirs.map((d) => [d, new Set(fs.existsSync(d) ? fs.readdirSync(d) : [])])
+    );
     const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
     const submit = await request(app).post(`/api/v1/assignments/${assignmentId}/submit`)
       .set(authHeader(owner))
@@ -90,9 +98,11 @@ describe('assignments', () => {
     expect(mine.status).toBe(200);
 
     // Cleanup: remove only files the upload middleware wrote during this test.
-    for (const f of fs.existsSync(uploadDir) ? fs.readdirSync(uploadDir) : []) {
-      if (!beforeFiles.has(f)) {
-        try { fs.unlinkSync(path.join(uploadDir, f)); } catch (_) {}
+    for (const dir of uploadDirs) {
+      for (const f of fs.existsSync(dir) ? fs.readdirSync(dir) : []) {
+        if (!beforeFiles.get(dir).has(f)) {
+          try { fs.unlinkSync(path.join(dir, f)); } catch (_) {}
+        }
       }
     }
   });

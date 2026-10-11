@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const homeworkController = require('../controllers/homeworkController');
 const { protect, authorize } = require('../middleware/auth');
+const { singleUpload } = require('../utils/stagedUpload');
 
 // Protect all routes
 router.use(protect);
@@ -10,7 +11,7 @@ router.use(protect);
 router.post(
   '/',
   authorize('FACULTY', 'ADMIN'),
-  homeworkController.uploadMiddleware.array('attachments', 5),
+  singleUpload(homeworkController.uploadMiddleware.array('attachments', 5)),
   homeworkController.createHomework
 );
 
@@ -34,7 +35,7 @@ router.delete(
 router.post(
   '/:homeworkId/submit',
   authorize('STUDENT'),
-  homeworkController.uploadMiddleware.array('files', 5),
+  singleUpload(homeworkController.uploadMiddleware.array('files', 5)),
   homeworkController.submitHomework
 );
 

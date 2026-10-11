@@ -14,6 +14,7 @@ const { protect, authorize, checkOwnership } = require('../middleware/auth');
 const { validate, studentValidation } = require('../middleware/validation');
 const { uploadLimiter } = require('../middleware/rateLimiter');
 const upload = require('../utils/upload');
+const { singleUpload } = require('../utils/stagedUpload');
 const { requirePermission, applyPermissionFilter, checkOwnership: rbacCheckOwnership, RESOURCES, ACTIONS } = require('../middleware/rbac');
 
 const router = express.Router();
@@ -40,7 +41,7 @@ router.post('/me/photo',
   protect, 
   authorize('STUDENT'), 
   uploadLimiter, 
-  upload.single('photo'), 
+  singleUpload(upload.single('photo')), 
   uploadProfilePhoto
 );
 
@@ -64,7 +65,7 @@ router.post('/:id/photo',
   requirePermission(RESOURCES.STUDENT, ACTIONS.UPDATE),
   checkOwnership, 
   uploadLimiter, 
-  upload.single('photo'), 
+  singleUpload(upload.single('photo')), 
   uploadProfilePhoto
 );
 

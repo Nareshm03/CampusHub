@@ -1,32 +1,30 @@
 // Authenticated file serving.
 //
-// Replaces the former blanket `express.static('uploads')` mount, which
-// exposed every uploaded file (ebooks, resumes, homework, photos) without
-// authentication and bypassed all controller download gates.
+// Every request requires a valid JWT (protect) — no token in URL;
+// :category allowlist with per-category authorization;
+// filenames are sanitized (basename, safe charset) — no traversal, no
+// filesystem path leakage (unknown/missing files are uniformly 404);
+// categories with dedicated controller endpoints (placement-documents,
+// homework, study-materials, assignments) are NOT served here.
 //
-// Rules:
-// - every request requires a valid JWT (protect) — no token in URL;
-// - :category allowlist with per-category authorization;
-// - filenames are sanitized (basename, safe charset, resolved path must stay
-//   inside the category dir) — no traversal, no filesystem path leakage
-//   (unknown/missing files are uniformly 404);
-// - categories with dedicated controller endpoints (placement-documents,
-//   homework, study-materials) are NOT served here.
-const path = require('path');
-const fs = require('fs');
+// Reads go through the storage adapter (local dir today, private blob
+// tomorrow) AFTER authorization. Storage never replaces authorization and
+// no raw internal storage URL is ever exposed.
 const DigitalBook = require('../models/DigitalBook');
-const User = require('../models/User');
-
-const UPLOAD_ROOT = path.join(__dirname, '../../uploads');
+const Student = require('../models/Student');
+const {
+  getStorage,
+  assertCategory,
+  assertSafeFilename,
+  StorageError,
+} = require('../utils/storage');
 
 const CATEGORY_DIRS = {
   students: 'students',
   'book-covers': 'book-covers',
   'company-logos': 'company-logos',
-  ebooks: 'ebooks'
+  ebooks: 'ebooks',
 };
-
-const SAFE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
 async function authorizeFile(req, category, filename) {
   const user = req.user;
@@ -37,10 +35,12 @@ async function authorizeFile(req, category, filename) {
   }
 
   if (category === 'students') {
-    // Profile photos: owner, faculty rosters, or admin.
+    // Profile photos: owner, faculty rosters, or admin. Ownership resolves
+    // through the Student profile (profilePhoto lives on Student, keyed by
+    // userId) — never through a filesystem path.
     if (user.role === 'ADMIN' || user.role === 'FACULTY') return true;
-    const owner = await User.findOne({ profilePhoto: filename }).select('_id').lean();
-    return !!owner && owner._id.toString() === user._id.toString();
+    const owner = await Student.findOne({ profilePhoto: filename }).select('userId').lean();
+    return !!owner && owner.userId && owner.userId.toString() === user._id.toString();
   }
 
   if (category === 'ebooks') {
@@ -57,25 +57,61 @@ const serveFile = async (req, res) => {
   try {
     const { category, filename } = req.params;
 
-    if (!Object.prototype.hasOwnProperty.call(CATEGORY_DIRS, category) || !SAFE_NAME.test(filename || '')) {
+    if (
+      !Object.prototype.hasOwnProperty.call(CATEGORY_DIRS, category) ||
+      typeof filename !== 'string'
+    ) {
+      return res.status(404).json({ success: false, error: 'File not found' });
+    }
+    assertCategory(category);
+    assertSafeFilename(filename);
+
+    const { storage } = getStorage();
+    const exists = await storage.exists({ category, filename });
+    if (!exists) {
       return res.status(404).json({ success: false, error: 'File not found' });
     }
 
-    const dir = path.join(UPLOAD_ROOT, CATEGORY_DIRS[category]);
-    const resolved = path.resolve(dir, path.basename(filename));
-    if (path.relative(path.resolve(dir), resolved).startsWith('..') || !fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) {
-      return res.status(404).json({ success: false, error: 'File not found' });
-    }
-
-    const allowed = await authorizeFile(req, category, path.basename(filename));
+    const allowed = await authorizeFile(req, category, filename);
     if (!allowed) {
       return res.status(403).json({ success: false, error: 'Access denied to this file' });
     }
 
-    return res.sendFile(resolved);
+    const { stream, bytes, contentType } = await storage.get({ category, filename });
+    if (contentType) res.setHeader('Content-Type', contentType);
+    if (typeof bytes === 'number') res.setHeader('Content-Length', String(bytes));
+    stream.on('error', () => {
+      if (!res.headersSent) {
+        res.status(404).json({ success: false, error: 'File not found' });
+      } else {
+        res.end();
+      }
+    });
+    return stream.pipe(res);
   } catch (error) {
+    if (error instanceof StorageError && error.code === 'STORAGE_CONFIG_ERROR') {
+      return res.status(503).json({ success: false, error: error.message });
+    }
     return res.status(404).json({ success: false, error: 'File not found' });
   }
 };
 
-module.exports = { serveFile };
+// GET /api/v1/files/usage — ADMIN only. Application-side storage accounting
+// by category (bytes/files), active provider, and quota state. This is a
+// diagnostics aid, not a billing source: Azure transactions/egress must be
+// monitored in Azure Cost Management.
+const getUsage = async (req, res) => {
+  try {
+    const { getUsageSummary } = require('../utils/storage');
+    const { storage, config } = getStorage();
+    const summary = await getUsageSummary(storage, config);
+    return res.json({ success: true, data: summary });
+  } catch (error) {
+    if (error instanceof StorageError) {
+      return res.status(error.status || 500).json({ success: false, error: error.message });
+    }
+    return res.status(500).json({ success: false, error: 'Error computing storage usage' });
+  }
+};
+
+module.exports = { serveFile, getUsage };

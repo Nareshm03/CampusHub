@@ -7,41 +7,21 @@ const Marks = require('../models/Marks');
 const Attendance = require('../models/Attendance');
 const Assignment = require('../models/Assignment');
 const AssignmentSubmission = require('../models/AssignmentSubmission');
-const multer = require('multer');
-const path = require('path');
-const fs = require('fs').promises;
 const AuditLogger = require('../utils/auditLogger');
+const { uploadFor, singleUpload } = require('../utils/stagedUpload');
+const {
+  getStorage,
+  persistStagedFile,
+  discardStagedFiles,
+} = require('../utils/storage');
 
-// Configure multer for document uploads
-const storage = multer.diskStorage({
-  destination: async (req, file, cb) => {
-    const uploadDir = path.join(__dirname, '../../uploads/placement-documents');
-    try {
-      await fs.mkdir(uploadDir, { recursive: true });
-      cb(null, uploadDir);
-    } catch (error) {
-      cb(error);
-    }
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, 'doc-' + uniqueSuffix + path.extname(file.originalname));
-  }
-});
-
-const upload = multer({
-  storage: storage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
-  fileFilter: (req, file, cb) => {
-    const allowedTypes = ['.pdf', '.doc', '.docx', '.jpg', '.jpeg', '.png'];
-    const ext = path.extname(file.originalname).toLowerCase();
-    if (allowedTypes.includes(ext)) {
-      cb(null, true);
-    } else {
-      cb(new Error('Invalid file type'));
-    }
-  }
-});
+// Staged placement-document upload (10MB, PDF/DOC/DOCX/JPG/PNG). The apply
+// handler persists staged files through the storage adapter; validation is
+// unchanged (extension allowlist only, as before).
+const _placementUpload = uploadFor('placement-documents', { files: 7 });
+const upload = {
+  fields: (fields) => singleUpload(_placementUpload.fields(fields)),
+};
 
 // Get all job postings
 exports.getAllJobs = async (req, res) => {
@@ -268,24 +248,68 @@ exports.applyForJob = [
         status: 'Pending'
       };
 
-      // Add uploaded files
+      // Persist staged uploads through the adapter BEFORE saving, so a
+      // failed write never creates a success-looking application record.
+      const { storage, config } = getStorage();
+      const stagedList = [
+        ...(req.files && req.files.resume ? req.files.resume : []),
+        ...(req.files && req.files.coverLetter ? req.files.coverLetter : []),
+        ...(req.files && req.files.documents ? req.files.documents : []),
+      ];
+      const savedByStaged = new Map();
+      if (stagedList.length > 0) {
+        try {
+          for (const f of stagedList) {
+            const saved = await persistStagedFile(storage, config, {
+              category: 'placement-documents',
+              stagedPath: f.path,
+              originalName: f.originalname,
+              mimetype: f.mimetype,
+            });
+            savedByStaged.set(f, saved);
+          }
+        } catch (err) {
+          discardStagedFiles(stagedList);
+          // Remove any objects already stored by this attempt (no orphans).
+          for (const saved of savedByStaged.values()) {
+            try {
+              await storage.delete({ category: 'placement-documents', filename: saved.filename });
+            } catch (_) {}
+          }
+          return res.status(err.status || 500).json({
+            success: false,
+            message: err.message || 'Error uploading application documents',
+          });
+        }
+      }
+
+      // Add uploaded files (database references keep their established shape)
       if (req.files) {
         if (req.files.resume) {
-          application.resume = `/uploads/placement-documents/${req.files.resume[0].filename}`;
+          application.resume = `/uploads/placement-documents/${savedByStaged.get(req.files.resume[0]).filename}`;
         }
         if (req.files.coverLetter) {
-          application.coverLetter = `/uploads/placement-documents/${req.files.coverLetter[0].filename}`;
+          application.coverLetter = `/uploads/placement-documents/${savedByStaged.get(req.files.coverLetter[0]).filename}`;
         }
         if (req.files.documents) {
           application.documents = req.files.documents.map(file => ({
             name: file.originalname,
-            url: `/uploads/placement-documents/${file.filename}`
+            url: `/uploads/placement-documents/${savedByStaged.get(file).filename}`
           }));
         }
       }
 
       job.addApplication(application);
-      await job.save();
+      try {
+        await job.save();
+      } catch (dbError) {
+        for (const saved of savedByStaged.values()) {
+          try {
+            await storage.delete({ category: 'placement-documents', filename: saved.filename });
+          } catch (_) {}
+        }
+        throw dbError;
+      }
 
       res.status(201).json({
         success: true,

@@ -1,10 +1,15 @@
-const path = require('path');
-const fs = require('fs');
 const StudyMaterial = require('../models/StudyMaterial');
 const Subject = require('../models/Subject');
 const Student = require('../models/Student');
 const User = require('../models/User');
 const Notification = require('../models/Notification');
+const {
+  getStorage,
+  persistStagedFiles,
+  discardStagedFiles,
+  lookupContentType,
+  StorageError,
+} = require('../utils/storage');
 
 // Helper: build access filter for students
 const buildAccessFilter = (user) => {
@@ -26,31 +31,66 @@ const uploadMaterials = async (req, res) => {
     }
 
     const subjectDoc = await Subject.findById(subject).populate('department');
-    if (!subjectDoc) return res.status(404).json({ success: false, error: 'Subject not found' });
+    if (!subjectDoc) {
+      discardStagedFiles(req.files);
+      return res.status(404).json({ success: false, error: 'Subject not found' });
+    }
 
-    const files = req.files.map(f => ({
-      originalName: f.originalname,
-      filename: f.filename,
-      filepath: f.path,
-      mimetype: f.mimetype,
-      size: f.size
+    // Persist staged uploads through the adapter BEFORE creating the record.
+    // persistStagedFiles compensates (deletes stored objects) on failure.
+    const { storage, config } = getStorage();
+    let saved;
+    try {
+      saved = await persistStagedFiles(
+        storage,
+        config,
+        req.files.map((f) => ({
+          category: 'study-materials',
+          stagedPath: f.path,
+          originalName: f.originalname,
+          mimetype: f.mimetype,
+        }))
+      );
+    } catch (err) {
+      discardStagedFiles(req.files);
+      return res
+        .status(err.status || 500)
+        .json({ success: false, error: err.message || 'Error uploading files' });
+    }
+
+    const files = saved.map((s) => ({
+      originalName: s.originalName,
+      filename: s.filename,
+      filepath: `uploads/study-materials/${s.filename}`,
+      mimetype: s.mimetype,
+      size: s.size,
     }));
 
-    const material = await StudyMaterial.create({
-      title,
-      description,
-      category,
-      subject,
-      department: subjectDoc.department._id,
-      faculty: req.user._id,
-      semester: Number(semester),
-      academicYear,
-      courseCode: courseCode || subjectDoc.subjectCode,
-      tags: tags ? (Array.isArray(tags) ? tags : tags.split(',').map(t => t.trim())) : [],
-      files,
-      accessLevel: accessLevel || 'ALL_STUDENTS',
-      isPublished: true
-    });
+    let material;
+    try {
+      material = await StudyMaterial.create({
+        title,
+        description,
+        category,
+        subject,
+        department: subjectDoc.department._id,
+        faculty: req.user._id,
+        semester: Number(semester),
+        academicYear,
+        courseCode: courseCode || subjectDoc.subjectCode,
+        tags: tags ? (Array.isArray(tags) ? tags : tags.split(',').map(t => t.trim())) : [],
+        files,
+        accessLevel: accessLevel || 'ALL_STUDENTS',
+        isPublished: true
+      });
+    } catch (dbError) {
+      for (const s of saved) {
+        try {
+          await storage.delete({ category: 'study-materials', filename: s.filename });
+        } catch (_) {}
+      }
+      throw dbError;
+    }
 
     await material.populate([
       { path: 'subject', select: 'name subjectCode' },
@@ -65,8 +105,8 @@ const uploadMaterials = async (req, res) => {
 
     res.status(201).json({ success: true, data: material });
   } catch (error) {
-    // Clean up uploaded files on error
-    if (req.files) req.files.forEach(f => fs.unlink(f.path, () => {}));
+    // Clean up staged uploads on error
+    if (req.files) discardStagedFiles(req.files);
     res.status(400).json({ success: false, error: error.message });
   }
 };
@@ -224,7 +264,18 @@ const deleteMaterial = async (req, res) => {
       return res.status(403).json({ success: false, error: 'Not authorized to delete this material' });
     }
 
-    material.files.forEach(f => fs.unlink(f.filepath, () => {}));
+    try {
+      const { storage } = getStorage();
+      for (const f of material.files) {
+        try {
+          await storage.delete({
+            category: 'study-materials',
+            filename: f.filename,
+            storedPath: f.filepath,
+          });
+        } catch (_) {}
+      }
+    } catch (_) {}
     await material.deleteOne();
 
     res.status(200).json({ success: true, message: 'Material deleted successfully' });
@@ -244,8 +295,21 @@ const downloadFile = async (req, res) => {
     const file = material.files.find(f => f.filename === req.params.filename);
     if (!file) return res.status(404).json({ success: false, error: 'File not found' });
 
-    if (!fs.existsSync(file.filepath)) {
-      return res.status(404).json({ success: false, error: 'File no longer exists on server' });
+    // Authorized read goes through the adapter; legacy absolute filepaths
+    // still resolve for records written before the adapter migration.
+    const { storage } = getStorage();
+    let stored;
+    try {
+      stored = await storage.get({
+        category: 'study-materials',
+        filename: file.filename,
+        storedPath: file.filepath,
+      });
+    } catch (err) {
+      if (err instanceof StorageError && err.code === 'NOT_FOUND') {
+        return res.status(404).json({ success: false, error: 'File no longer exists on server' });
+      }
+      throw err;
     }
 
     // Track download
@@ -254,9 +318,17 @@ const downloadFile = async (req, res) => {
       $push: { downloadedBy: { user: req.user._id } }
     });
 
-    res.setHeader('Content-Disposition', `attachment; filename="${file.originalName}"`);
-    res.setHeader('Content-Type', file.mimetype);
-    res.sendFile(path.resolve(file.filepath));
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${String(file.originalName).replace(/["\r\n]/g, '')}"`
+    );
+    res.setHeader('Content-Type', file.mimetype || stored.contentType || lookupContentType(file.filename));
+    if (typeof stored.bytes === 'number') res.setHeader('Content-Length', String(stored.bytes));
+    stored.stream.on('error', () => {
+      if (!res.headersSent) res.status(404).json({ success: false, error: 'File no longer exists on server' });
+      else res.end();
+    });
+    return stored.stream.pipe(res);
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -277,7 +349,14 @@ const removeFile = async (req, res) => {
     const fileIdx = material.files.findIndex(f => f.filename === req.params.filename);
     if (fileIdx === -1) return res.status(404).json({ success: false, error: 'File not found' });
 
-    fs.unlink(material.files[fileIdx].filepath, () => {});
+    try {
+      const { storage } = getStorage();
+      await storage.delete({
+        category: 'study-materials',
+        filename: material.files[fileIdx].filename,
+        storedPath: material.files[fileIdx].filepath,
+      });
+    } catch (_) {}
     material.files.splice(fileIdx, 1);
 
     if (material.files.length === 0) {
@@ -308,20 +387,49 @@ const addFiles = async (req, res) => {
       return res.status(400).json({ success: false, error: 'No files provided' });
     }
 
-    const newFiles = req.files.map(f => ({
-      originalName: f.originalname,
-      filename: f.filename,
-      filepath: f.path,
-      mimetype: f.mimetype,
-      size: f.size
+    const { storage, config } = getStorage();
+    let saved;
+    try {
+      saved = await persistStagedFiles(
+        storage,
+        config,
+        req.files.map((f) => ({
+          category: 'study-materials',
+          stagedPath: f.path,
+          originalName: f.originalname,
+          mimetype: f.mimetype,
+        }))
+      );
+    } catch (err) {
+      discardStagedFiles(req.files);
+      return res
+        .status(err.status || 500)
+        .json({ success: false, error: err.message || 'Error uploading files' });
+    }
+
+    const newFiles = saved.map((s) => ({
+      originalName: s.originalName,
+      filename: s.filename,
+      filepath: `uploads/study-materials/${s.filename}`,
+      mimetype: s.mimetype,
+      size: s.size
     }));
 
     material.files.push(...newFiles);
-    await material.save();
+    try {
+      await material.save();
+    } catch (dbError) {
+      for (const s of saved) {
+        try {
+          await storage.delete({ category: 'study-materials', filename: s.filename });
+        } catch (_) {}
+      }
+      throw dbError;
+    }
 
     res.status(200).json({ success: true, data: material });
   } catch (error) {
-    if (req.files) req.files.forEach(f => fs.unlink(f.path, () => {}));
+    if (req.files) discardStagedFiles(req.files);
     res.status(400).json({ success: false, error: error.message });
   }
 };

@@ -1,39 +1,16 @@
 const Company = require('../models/Company');
-const multer = require('multer');
 const mongoose = require('mongoose');
-const path = require('path');
-const fs = require('fs').promises;
+const { uploadFor, singleUpload } = require('../utils/stagedUpload');
+const {
+  getStorage,
+  persistStagedFile,
+  discardStagedFiles,
+  parseStoredRef,
+} = require('../utils/storage');
 
-// Configure multer for logo upload
-const storage = multer.diskStorage({
-  destination: async (req, file, cb) => {
-    const uploadDir = path.join(__dirname, '../../uploads/company-logos');
-    try {
-      await fs.mkdir(uploadDir, { recursive: true });
-      cb(null, uploadDir);
-    } catch (error) {
-      cb(error);
-    }
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, 'logo-' + uniqueSuffix + path.extname(file.originalname));
-  }
-});
-
-const upload = multer({
-  storage: storage,
-  limits: { fileSize: 2 * 1024 * 1024 }, // 2MB
-  fileFilter: (req, file, cb) => {
-    const allowedTypes = ['.jpg', '.jpeg', '.png', '.webp'];
-    const ext = path.extname(file.originalname).toLowerCase();
-    if (allowedTypes.includes(ext)) {
-      cb(null, true);
-    } else {
-      cb(new Error('Invalid file type. Only images are allowed.'));
-    }
-  }
-});
+// Staged logo upload (2MB images). The controller persists the staged file
+// through the storage adapter; validation is unchanged.
+const upload = uploadFor('company-logos');
 
 // Get all companies
 exports.getAllCompanies = async (req, res) => {
@@ -121,7 +98,7 @@ exports.getCompanyById = async (req, res) => {
 
 // Create company
 exports.createCompany = [
-  upload.single('logo'),
+  singleUpload(upload.single('logo')),
   async (req, res) => {
     try {
       const companyData = {
@@ -129,8 +106,24 @@ exports.createCompany = [
         addedBy: req.user._id
       };
 
+      let savedLogo = null;
       if (req.file) {
-        companyData.logo = `/uploads/company-logos/${req.file.filename}`;
+        const { storage, config } = getStorage();
+        try {
+          savedLogo = await persistStagedFile(storage, config, {
+            category: 'company-logos',
+            stagedPath: req.file.path,
+            originalName: req.file.originalname,
+            mimetype: req.file.mimetype,
+          });
+        } catch (err) {
+          discardStagedFiles([req.file]);
+          return res.status(err.status || 500).json({
+            success: false,
+            message: err.message || 'Error uploading company logo',
+          });
+        }
+        companyData.logo = `/uploads/company-logos/${savedLogo.filename}`;
       }
 
       // Parse JSON fields
@@ -145,7 +138,18 @@ exports.createCompany = [
       }
 
       const company = new Company(companyData);
-      await company.save();
+      try {
+        await company.save();
+      } catch (dbError) {
+        // Compensate: DB write failed after the logo was stored.
+        if (savedLogo) {
+          try {
+            const { storage } = getStorage();
+            await storage.delete({ category: 'company-logos', filename: savedLogo.filename });
+          } catch (_) {}
+        }
+        throw dbError;
+      }
 
       res.status(201).json({
         success: true,
@@ -225,11 +229,14 @@ exports.deleteCompany = async (req, res) => {
       });
     }
 
-    // Delete logo if exists
+    // Delete logo if exists (missing objects are fine).
     if (company.logo) {
       try {
-        const logoPath = path.join(__dirname, '../..', company.logo);
-        await fs.unlink(logoPath);
+        const ref = parseStoredRef(company.logo);
+        if (ref) {
+          const { storage } = getStorage();
+          await storage.delete({ category: ref.category, filename: ref.filename });
+        }
       } catch (error) {
         console.error('Error deleting logo:', error);
       }

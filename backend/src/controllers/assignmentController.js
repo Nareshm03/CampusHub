@@ -3,8 +3,11 @@ const AssignmentSubmission = require('../models/AssignmentSubmission');
 const Subject = require('../models/Subject');
 const Student = require('../models/Student');
 const Faculty = require('../models/Faculty');
-const path = require('path');
-const fs = require('fs').promises;
+const {
+  getStorage,
+  persistStagedFiles,
+  discardStagedFiles,
+} = require('../utils/storage');
 
 /**
  * Create new assignment
@@ -334,15 +337,46 @@ exports.uploadAssignmentFiles = async (req, res) => {
       });
     }
 
-    const attachments = req.files.map(file => ({
-      filename: file.originalname,
-      filepath: file.path,
-      mimetype: file.mimetype,
-      size: file.size
+    // Persist staged files through the adapter BEFORE mutating the record.
+    const { storage, config } = getStorage();
+    let saved;
+    try {
+      saved = await persistStagedFiles(
+        storage,
+        config,
+        req.files.map((file) => ({
+          category: 'assignments',
+          stagedPath: file.path,
+          originalName: file.originalname,
+          mimetype: file.mimetype,
+        }))
+      );
+    } catch (err) {
+      discardStagedFiles(req.files);
+      return res.status(err.status || 500).json({
+        success: false,
+        error: err.message || 'Error uploading files',
+      });
+    }
+
+    const attachments = saved.map(s => ({
+      filename: s.originalName,
+      filepath: `uploads/assignments/${s.filename}`,
+      mimetype: s.mimetype,
+      size: s.size
     }));
 
     assignment.attachments.push(...attachments);
-    await assignment.save();
+    try {
+      await assignment.save();
+    } catch (dbError) {
+      for (const s of saved) {
+        try {
+          await storage.delete({ category: 'assignments', filename: s.filename });
+        } catch (_) {}
+      }
+      throw dbError;
+    }
 
     res.status(200).json({
       success: true,
@@ -417,12 +451,45 @@ exports.submitAssignment = async (req, res) => {
       submission.version += 1;
     }
 
-    const files = req.files ? req.files.map(file => ({
-      filename: file.originalname,
-      filepath: file.path,
-      mimetype: file.mimetype,
-      size: file.size
-    })) : [];
+    let saved = [];
+    if (req.files && req.files.length > 0) {
+      const { storage, config } = getStorage();
+      try {
+        saved = await persistStagedFiles(
+          storage,
+          config,
+          req.files.map((file) => ({
+            category: 'assignments',
+            stagedPath: file.path,
+            originalName: file.originalname,
+            mimetype: file.mimetype,
+          }))
+        );
+      } catch (err) {
+        discardStagedFiles(req.files);
+        return res.status(err.status || 500).json({
+          success: false,
+          error: err.message || 'Error uploading submission files',
+        });
+      }
+    }
+    const files = saved.map(s => ({
+      filename: s.originalName,
+      filepath: `uploads/assignments/${s.filename}`,
+      mimetype: s.mimetype,
+      size: s.size
+    }));
+
+    const compensate = async () => {
+      if (saved.length > 0) {
+        const { storage } = getStorage();
+        for (const s of saved) {
+          try {
+            await storage.delete({ category: 'assignments', filename: s.filename });
+          } catch (_) {}
+        }
+      }
+    };
 
     if (submission) {
       submission.files = files;
@@ -430,17 +497,27 @@ exports.submitAssignment = async (req, res) => {
       submission.submittedAt = new Date();
       submission.isLate = isLate;
       submission.status = isLate ? 'LATE' : 'SUBMITTED';
-      await submission.save();
+      try {
+        await submission.save();
+      } catch (dbError) {
+        await compensate();
+        throw dbError;
+      }
     } else {
-      submission = await AssignmentSubmission.create({
-        assignment: assignment._id,
-        student: student._id,
-        files,
-        textSubmission: req.body.textSubmission,
-        isLate,
-        status: isLate ? 'LATE' : 'SUBMITTED',
-        institution: req.user.institution
-      });
+      try {
+        submission = await AssignmentSubmission.create({
+          assignment: assignment._id,
+          student: student._id,
+          files,
+          textSubmission: req.body.textSubmission,
+          isLate,
+          status: isLate ? 'LATE' : 'SUBMITTED',
+          institution: req.user.institution
+        });
+      } catch (dbError) {
+        await compensate();
+        throw dbError;
+      }
     }
 
     const populatedSubmission = await AssignmentSubmission.findById(submission._id)
