@@ -72,38 +72,29 @@ export default function StudentAttendancePage() {
       
       // Handle different user roles
       if (user?.role === 'PARENT') {
-        // For parents, try sessionStorage first, then fetch if needed
-        let dashboard;
-        const storedDashboard = sessionStorage.getItem('parentDashboard');
-        
-        if (storedDashboard) {
-          dashboard = JSON.parse(storedDashboard);
-          console.log('Using stored dashboard:', dashboard);
-        } else {
-          // Fetch parent dashboard if not in sessionStorage
-          const parentRes = await api.get('/parent/dashboard').catch(err => {
-            if (err.response?.status === 403) {
-              console.error('Permission denied: You do not have access to view this data');
-              setSummary([]);
-              setAttendanceRecords([]);
-              setStudentData(null);
-              return null;
-            }
-            console.error('Failed to fetch parent dashboard:', err.response?.status, err.message);
-            throw err;
-          });
-          
-          if (!parentRes) return;
-          
-          if (!parentRes?.data?.linked || !parentRes?.data?.data) {
-            console.warn('Parent has no linked student');
-            return;
+        // Parents always read the authoritative linked-child endpoints.
+        // (A previous sessionStorage cache of another account's child data
+        // was removed: it went stale across approvals and shared devices.)
+        const parentRes = await api.get('/parent/dashboard').catch(err => {
+          if (err.response?.status === 403) {
+            console.error('Permission denied: You do not have access to view this data');
+            setSummary([]);
+            setAttendanceRecords([]);
+            setStudentData(null);
+            return null;
           }
-          
-          dashboard = parentRes.data.data;
-          console.log('Fetched dashboard:', dashboard);
-          sessionStorage.setItem('parentDashboard', JSON.stringify(dashboard));
+          console.error('Failed to fetch parent dashboard:', err.response?.status, err.message);
+          throw err;
+        });
+
+        if (!parentRes) return;
+
+        if (!parentRes?.data?.linked || !parentRes?.data?.data) {
+          console.warn('Parent has no linked student');
+          return;
         }
+
+        const dashboard = parentRes.data.data;
         
         // The student object from parent dashboard doesn't have _id directly
         // We need to fetch the full student profile to get the _id

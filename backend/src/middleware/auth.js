@@ -8,6 +8,15 @@ const memoryBlacklist = new Set();
 
 const BLACKLIST_PREFIX = 'bl:';
 
+// Self-service routes that unverified users may still access
+// (profile fetch, logout, password change). Verification and resend
+// routes are public and do not pass through this middleware.
+const UNVERIFIED_ALLOWED_PATHS = [
+  '/api/v1/auth/me',
+  '/api/v1/auth/logout',
+  '/api/v1/auth/changepassword'
+];
+
 // Protect routes - verify JWT token
 const authenticateToken = async (req, res, next) => {
   let token;
@@ -54,6 +63,20 @@ const authenticateToken = async (req, res, next) => {
         success: false,
         error: 'Account access has been removed by administrator'
       });
+    }
+
+    // Email verification gate: unverified self-registered STUDENT/PARENT
+    // accounts cannot access protected resources even with a valid JWT.
+    // Previously issued tokens are caught here because the check reads
+    // live verification state from the database on every request.
+    if (!user.isEmailVerified) {
+      const isAllowed = UNVERIFIED_ALLOWED_PATHS.some(p => req.path.startsWith(p));
+      if (!isAllowed) {
+        return res.status(403).json({
+          success: false,
+          error: 'Email verification required. Please verify your email before accessing this resource.'
+        });
+      }
     }
     
     req.user = user;

@@ -31,7 +31,11 @@ describe('P0 public registration', () => {
     expect((await request(app).post('/api/v1/auth/register').send({ ...evil, email: 'evil2.sec@test.com', role: 'FACULTY' })).status).toBe(403);
     const ok = await request(app).post('/api/v1/auth/register').send({ ...evil, email: 'ok.sec@test.com', role: 'STUDENT' });
     expect(ok.status).toBe(201);
-    expect(ok.body.data.role).toBe('STUDENT');
+    expect(ok.body.success).toBe(true);
+    expect(ok.body.verified).toBe(false);
+    const User = require('../src/models/User');
+    const regUser = await User.findOne({ email: 'ok.sec@test.com' });
+    expect(regUser.role).toBe('STUDENT');
   });
 });
 

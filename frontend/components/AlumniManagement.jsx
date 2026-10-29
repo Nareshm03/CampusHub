@@ -214,6 +214,19 @@ export default function AlumniManagement() {
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800"
                   />
                 </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-1">Contact Phone (Optional)</label>
+                  <input
+                    type="tel"
+                    value={graduationData.contactPhone}
+                    onChange={(e) => setGraduationData(prev => ({
+                      ...prev,
+                      contactPhone: e.target.value
+                    }))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800"
+                  />
+                </div>
               </div>
               
               <div className="flex gap-3 mt-6">

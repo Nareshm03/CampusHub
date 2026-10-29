@@ -130,6 +130,13 @@ export const AuthProvider = ({ children }) => {
   const logout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
+    // Drop any cached child data so a later account on a shared device can
+    // never render the previously viewed child's records.
+    try {
+      sessionStorage.removeItem('parentDashboard');
+    } catch {
+      // storage unavailable — nothing cached to clear
+    }
     setUser(null);
     setToken(null);
     router.push('/login');
@@ -153,8 +160,15 @@ export const AuthProvider = ({ children }) => {
     return !isTokenExpired(token);
   };
 
+  // Re-read the authoritative profile (e.g. after a link approval changes
+  // association state) and refresh the cached copy.
+  const refreshProfile = async () => {
+    const profile = await fetchProfile(null);
+    return profile;
+  };
+
   return (
-    <AuthContext.Provider value={{ user, token, setUser, login, logout, loading, validateToken, updateProfilePhoto }}>
+    <AuthContext.Provider value={{ user, token, setUser, login, logout, loading, validateToken, updateProfilePhoto, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );

@@ -8,22 +8,49 @@ import { UserPlusIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 
 export default function ParentsPage() {
   const [parents, setParents] = useState([]);
+  const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [reviewing, setReviewing] = useState(null);
 
   useEffect(() => {
-    fetchParents();
+    fetchData();
   }, []);
 
-  const fetchParents = async () => {
+  const fetchData = async () => {
     try {
-      const response = await api.get('/parent/all');
-      setParents(response.data.data || []);
+      const [parentsRes, requestsRes] = await Promise.all([
+        api.get('/parent/all'),
+        api.get('/parent/link-requests?status=PENDING')
+      ]);
+      setParents(parentsRes.data.data || []);
+      setRequests(requestsRes.data.data || []);
     } catch (error) {
       console.error('Failed to fetch parents:', error);
       toast.error('Failed to load parents');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchParents = fetchData;
+
+  const handleReview = async (id, decision) => {
+    let note;
+    if (decision === 'REJECTED') {
+      const input = window.prompt('Reason for rejection (optional):');
+      if (input === null) return; // cancelled
+      note = input || undefined;
+    }
+    try {
+      setReviewing(id);
+      await api.put(`/parent/link-requests/${id}/review`, { decision, ...(note ? { adminNote: note } : {}) });
+      toast.success(decision === 'APPROVED' ? 'Link request approved' : 'Link request rejected');
+      await fetchData();
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Failed to review request');
+    } finally {
+      setReviewing(null);
     }
   };
 
@@ -77,6 +104,56 @@ export default function ParentsPage() {
               />
             </div>
           </div>
+        </Card>
+
+        {/* Pending link requests — approve/reject binds or leaves the child */}
+        <Card className="mb-6 p-6">
+          <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-1">
+            Pending Link Requests ({requests.length})
+          </h2>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+            A parent sees child data only after you approve their request.
+          </p>
+          {requests.length === 0 ? (
+            <p className="text-sm text-gray-500 dark:text-gray-400">No pending requests.</p>
+          ) : (
+            <div className="space-y-3">
+              {requests.map((req) => (
+                <div key={req._id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                  <div className="text-sm">
+                    <p className="font-semibold text-gray-900 dark:text-white">
+                      {req.parentUser?.name} <span className="font-normal text-gray-500">({req.parentUser?.email})</span>
+                    </p>
+                    <p className="text-gray-600 dark:text-gray-400">
+                      Requests USN: <span className="font-mono font-semibold">{req.usn}</span>
+                      {req.student?.userId?.name ? (
+                        <> — matches <span className="font-semibold">{req.student.userId.name}</span></>
+                      ) : (
+                        <> — <span className="text-amber-600 dark:text-amber-400">no matching student record</span></>
+                      )}
+                    </p>
+                    <p className="text-xs text-gray-500">Submitted {new Date(req.createdAt).toLocaleString()}</p>
+                  </div>
+                  <div className="flex gap-2 flex-shrink-0">
+                    <button
+                      disabled={reviewing === req._id}
+                      onClick={() => handleReview(req._id, 'APPROVED')}
+                      className="px-3 py-1.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+                    >
+                      Approve
+                    </button>
+                    <button
+                      disabled={reviewing === req._id}
+                      onClick={() => handleReview(req._id, 'REJECTED')}
+                      className="px-3 py-1.5 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+                    >
+                      Reject
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </Card>
 
         {filteredParents.length === 0 ? (

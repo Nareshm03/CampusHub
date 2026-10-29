@@ -23,7 +23,11 @@ async function seed() {
   const a = await createStudent({ department: dept, usn: 'PARAAA0001', subjects: [subj._id] });
   const b = await createStudent({ department: dept, usn: 'PARBBB0002', subjects: [subj._id] });
   const mkParent = async (email, linkTo) => {
+<<<<<<< Updated upstream
     const u = new User({ name: 'Par', email, password: 'Passw0rd!', role: 'PARENT', ...(linkTo ? { linkedStudentId: linkTo } : {}) });
+=======
+    const u = new User({ name: 'Par', email, password: 'Passw0rd!', role: 'PARENT', isEmailVerified: true, ...(linkTo ? { linkedStudentId: linkTo } : {}) });
+>>>>>>> Stashed changes
     await u.save();
     return u;
   };
@@ -39,8 +43,17 @@ describe('parent registration', () => {
     const base = { name: 'Parent Person', password: 'Passw0rd!' };
     const ok = await request(app).post('/api/v1/auth/register').send({ ...base, email: 'preg.sec@test.com', role: 'PARENT' });
     expect(ok.status).toBe(201);
+<<<<<<< Updated upstream
     expect(ok.body.data.role).toBe('PARENT');
     expect(ok.body.data.linkedStudentId || null).toBeNull();
+=======
+    expect(ok.body.success).toBe(true);
+    expect(ok.body.verified).toBe(false);
+    const User = require('../src/models/User');
+    const parentUser = await User.findOne({ email: 'preg.sec@test.com' });
+    expect(parentUser.role).toBe('PARENT');
+    expect(parentUser.linkedStudentId || null).toBeNull();
+>>>>>>> Stashed changes
     const evil = await request(app).post('/api/v1/auth/register').send({ ...base, email: 'evil.sec@test.com', role: 'ADMIN', department: String(dept._id) });
     expect(evil.status).toBe(403);
     const evil2 = await request(app).post('/api/v1/auth/register').send({ ...base, email: 'evil2.sec@test.com', role: 'FACULTY', department: String(dept._id) });
@@ -91,7 +104,11 @@ describe('approval-only linking', () => {
     const { admin, parA } = await seed();
     const hA = authHeader(parA);
     expect((await request(app).post('/api/v1/parent/link-student').set(hA).send({ usn: 'PARBBB0002' })).status).toBe(400);
+<<<<<<< Updated upstream
     const parU2 = new User({ name: 'Par', email: 'pu2.sec@test.com', password: 'Passw0rd!', role: 'PARENT' });
+=======
+    const parU2 = new User({ name: 'Par', email: 'pu2.sec@test.com', password: 'Passw0rd!', role: 'PARENT', isEmailVerified: true });
+>>>>>>> Stashed changes
     await parU2.save();
     const hU2 = authHeader(parU2);
     await request(app).post('/api/v1/parent/link-student').set(hU2).send({ usn: 'PARBBB0002' });

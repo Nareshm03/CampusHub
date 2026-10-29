@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import MicroInteractionsSafe from './MicroInteractionsSafe';
 import { 
@@ -49,9 +50,13 @@ const Navbar = () => {
   const { user, logout } = useAuth();
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const pathname = usePathname();
 
-
-  if (!user) return null;
+  // Public authentication pages never render the authenticated dashboard
+  // navigation, even if a session happens to exist (the page-level redirect
+  // handles sending authenticated users to their dashboard).
+  const authPaths = ['/login', '/register', '/forgot-password', '/reset-password', '/verify-email'];
+  if (!user || authPaths.includes(pathname)) return null;
 
   const getNavLinks = () => {
     const links = {

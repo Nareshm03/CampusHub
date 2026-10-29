@@ -61,12 +61,29 @@ describe('rbac regression matrix', () => {
       name: 'Leak Check', email: 'leak@test.com', password: 'Passw0rd!',
       role: 'STUDENT', department: String(dept._id),
     });
+    expect(reg.status).toBe(201);
+    expect(reg.body.success).toBe(true);
+    expect(reg.body.verified).toBe(false);
+    // No token is issued to unverified accounts
+    expect(reg.body.token).toBeUndefined();
+    expect(reg.body.data).toBeUndefined();
+    // No bcrypt hash in the response body
     expect(JSON.stringify(reg.body)).not.toMatch(/\$2[aby]\$/);
-    expect(reg.body.data.password).toBeUndefined();
 
+    // A verified user's /auth/me response also must not leak password hash
+    const User = require('../src/models/User');
+    const user = await User.findOne({ email: 'leak@test.com' });
+    user.isEmailVerified = true;
+    await user.save();
+    const loginRes = await request(app).post('/api/v1/auth/login').send({
+      email: 'leak@test.com', password: 'Passw0rd!',
+    });
+    expect(loginRes.status).toBe(200);
+    const token = loginRes.body.token;
     const me = await request(app).get('/api/v1/auth/me')
-      .set({ Authorization: `Bearer ${reg.body.token}` });
+      .set({ Authorization: `Bearer ${token}` });
     expect(JSON.stringify(me.body)).not.toMatch(/\$2[aby]\$/);
+    expect(me.body.data.password).toBeUndefined();
   });
 
   test('forged identity fields in bodies cannot hijack ownership', async () => {

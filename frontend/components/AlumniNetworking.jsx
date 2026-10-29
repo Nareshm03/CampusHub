@@ -1,6 +1,7 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import axios from '../lib/axios';
+import { toast } from 'sonner';
 import Card from './ui/Card';
 import Button from './ui/Button';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -22,48 +23,115 @@ const AlumniNetworking = () => {
   const [jobs, setJobs] = useState([]);
   const [mentors, setMentors] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState({ page: 1, limit: 12, total: 0 });
+  const [requesting, setRequesting] = useState(null);
+  const searchTimer = useRef(null);
+  const requestSeq = useRef(0);
+  const PAGE_LIMIT = 12;
+
+  // Debounced search: typing filters the real API result set, it never just
+  // sits in an uncontrolled input.
+  const handleSearchChange = (value) => {
+    setSearchInput(value);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => {
+      setSearch(value.trim());
+      setPage(1);
+    }, 400);
+  };
+  useEffect(() => () => {
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+  }, []);
 
   useEffect(() => {
     setLoading(true);
+    setLoadError('');
+    // A new tab/search/page is a new query: never show the previous tab's
+    // rows as this query's result.
     if (activeTab === 'alumni') fetchAlumni();
     if (activeTab === 'jobs') fetchJobs();
     if (activeTab === 'mentors') fetchMentors();
-  }, [activeTab]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, search, page]);
 
   const fetchAlumni = async () => {
+    const seq = ++requestSeq.current;
     try {
-      const response = await axios.get('/alumni');
+      const params = new URLSearchParams({ page: String(page), limit: String(PAGE_LIMIT) });
+      if (search) params.append('search', search);
+      const response = await axios.get(`/alumni?${params.toString()}`);
+      if (seq !== requestSeq.current) return; // stale response
       setAlumni(response.data.data || []);
+      if (response.data.pagination) {
+        setPagination({ ...response.data.pagination, limit: PAGE_LIMIT });
+      }
     } catch (error) {
-      console.error('Error fetching alumni:', error);
-    } finally { setLoading(false); }
+      if (seq !== requestSeq.current) return;
+      setLoadError(error.response?.data?.message || 'Failed to load alumni directory');
+    } finally {
+      if (seq === requestSeq.current) setLoading(false);
+    }
   };
 
   const fetchJobs = async () => {
+    const seq = ++requestSeq.current;
     try {
       const response = await axios.get('/alumni/jobs');
+      if (seq !== requestSeq.current) return;
       setJobs(response.data.data || []);
     } catch (error) {
-      console.error('Error fetching jobs:', error);
-    } finally { setLoading(false); }
+      if (seq !== requestSeq.current) return;
+      setLoadError(error.response?.data?.message || 'Failed to load job postings');
+    } finally {
+      if (seq === requestSeq.current) setLoading(false);
+    }
   };
 
   const fetchMentors = async () => {
+    const seq = ++requestSeq.current;
     try {
       const response = await axios.get('/alumni/mentors');
+      if (seq !== requestSeq.current) return;
       setMentors(response.data.data || []);
     } catch (error) {
-      console.error('Error fetching mentors:', error);
-    } finally { setLoading(false); }
+      if (seq !== requestSeq.current) return;
+      setLoadError(error.response?.data?.message || 'Failed to load mentors');
+    } finally {
+      if (seq === requestSeq.current) setLoading(false);
+    }
+  };
+
+  const retry = () => {
+    setLoading(true);
+    setLoadError('');
+    if (activeTab === 'alumni') fetchAlumni();
+    if (activeTab === 'jobs') fetchJobs();
+    if (activeTab === 'mentors') fetchMentors();
+  };
+
+  const switchTab = (id) => {
+    requestSeq.current += 1; // invalidate in-flight responses
+    setAlumni((prev) => (id === 'alumni' ? prev : []));
+    setJobs((prev) => (id === 'jobs' ? prev : []));
+    setMentors((prev) => (id === 'mentors' ? prev : []));
+    setPage(1);
+    setActiveTab(id);
   };
 
   const requestMentorship = async (mentorId) => {
     try {
+      setRequesting(mentorId);
       await axios.post(`/alumni/mentors/${mentorId}/request`);
-      alert('Mentorship request sent successfully!');
+      toast.success('Mentorship request sent! The mentor has been notified.');
+      fetchMentors();
     } catch (error) {
-      console.error('Error requesting mentorship:', error);
-      alert('Failed to send mentorship request');
+      toast.error(error.response?.data?.message || error.response?.data?.error || 'Failed to send mentorship request');
+    } finally {
+      setRequesting(null);
     }
   };
 
@@ -100,8 +168,10 @@ const AlumniNetworking = () => {
           </div>
           <input
             type="text"
+            value={searchInput}
+            onChange={(e) => handleSearchChange(e.target.value)}
             className="block w-full sm:w-72 pl-10 pr-3 py-3 border border-gray-200 dark:border-gray-700 rounded-2xl leading-5 bg-white/50 dark:bg-gray-800/50 backdrop-blur-xl placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-300 shadow-sm"
-            placeholder="Search network..."
+            placeholder="Search by name, USN, or company..."
           />
         </div>
       </motion.div>
@@ -115,7 +185,7 @@ const AlumniNetworking = () => {
             return (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => switchTab(tab.id)}
                 className={`relative flex items-center gap-2 py-2.5 px-6 rounded-xl font-medium text-sm transition-all duration-300 ${
                   isActive 
                     ? `text-white shadow-md` 
@@ -146,6 +216,12 @@ const AlumniNetworking = () => {
           <div className="flex justify-center items-center h-64">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
           </div>
+        ) : loadError ? (
+          <div className="flex flex-col items-center justify-center p-12 text-center bg-red-50/50 dark:bg-red-900/10 border border-dashed border-red-300 dark:border-red-800 rounded-3xl">
+            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Couldn&apos;t load {activeTab === 'alumni' ? 'directory' : activeTab}</h3>
+            <p className="text-gray-500 dark:text-gray-400 max-w-sm mb-4">{loadError}</p>
+            <Button onClick={retry}>Retry</Button>
+          </div>
         ) : (
           <AnimatePresence mode="wait">
             <motion.div
@@ -158,9 +234,15 @@ const AlumniNetworking = () => {
               
               {/* ALUMNI DIRECTORY */}
               {activeTab === 'alumni' && (
+                <>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {alumni.length === 0 ? (
-                    <EmptyState icon={UserGroupIcon} title="No Alumni Found" desc="Check back later for new network members." />
+                    <EmptyState
+                      icon={UserGroupIcon}
+                      title={search ? 'No Matches Found' : 'No Alumni Found'}
+                      desc={search ? `No alumni match "${search}". Try a different name, USN, or company.` : 'Check back later for new network members.'}
+                      className="col-span-full"
+                    />
                   ) : (
                     alumni.map((alum, i) => (
                       <motion.div key={alum._id} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.05 }}>
@@ -195,6 +277,24 @@ const AlumniNetworking = () => {
                     ))
                   )}
                 </div>
+                  {pagination.total > PAGE_LIMIT && (
+                    <div className="flex items-center justify-center gap-3 mt-8">
+                      <Button variant="outline" disabled={page <= 1} onClick={() => setPage(page - 1)}>
+                        Previous
+                      </Button>
+                      <span className="text-sm text-gray-600 dark:text-gray-400">
+                        Page {pagination.page} ({pagination.total} alumni)
+                      </span>
+                      <Button
+                        variant="outline"
+                        disabled={page * PAGE_LIMIT >= pagination.total}
+                        onClick={() => setPage(page + 1)}
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  )}
+                </>
               )}
 
               {/* JOB OPPORTUNITIES */}
@@ -288,9 +388,10 @@ const AlumniNetworking = () => {
                             
                             <button
                               onClick={() => requestMentorship(mentor._id)}
-                              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 rounded-xl transition-all shadow-md shadow-emerald-500/30 hover:-translate-y-0.5"
+                              disabled={requesting === mentor._id}
+                              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 rounded-xl transition-all shadow-md shadow-emerald-500/30 hover:-translate-y-0.5 disabled:opacity-50"
                             >
-                              Request Mentorship
+                              {requesting === mentor._id ? 'Sending...' : 'Request Mentorship'}
                             </button>
                           </div>
                         </Card>

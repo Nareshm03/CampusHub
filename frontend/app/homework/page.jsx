@@ -151,6 +151,13 @@ export default function HomeworkPage() {
     return <div className="flex justify-center items-center h-screen">Loading...</div>;
   }
 
+  // Parents have a dedicated linked-child view; the generic list is not
+  // parent-scoped and must not leak unrelated homework.
+  if (user?.role === 'PARENT') {
+    router.replace('/dashboard/parent/assignments');
+    return <div className="flex justify-center items-center h-screen">Loading...</div>;
+  }
+
   return (
     <div className="container mx-auto p-6">
       <div className="flex justify-between items-center mb-6">

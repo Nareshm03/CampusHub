@@ -130,8 +130,33 @@ export default function StudentFeesPage() {
 
   if (loading) return (
     <ProtectedRoute allowedRoles={['STUDENT', 'PARENT']}>
-      <PageLoader message="Loading financial records…" />
+      <PageLoader message="Loading financial records�?�" />
     </ProtectedRoute>
+  );
+
+  // An unlinked parent has no fee scope at all — say so explicitly instead
+  // of rendering the same empty state as a fully-paid account.
+  if (user?.role === 'PARENT' && !user.linkedStudentId) {
+    return (
+      <ProtectedRoute allowedRoles={['STUDENT', 'PARENT']}>
+        <div className="max-w-5xl mx-auto space-y-6">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Fees & Payments</h1>
+          </div>
+          <Card className="p-8 text-center text-gray-500">
+            No child account is linked yet. Fee records appear here once an administrator approves your link request.
+          </Card>
+        </div>
+      </ProtectedRoute>
+    );
+  }
+
+  // Outstanding balance across the same linked-child scope, labeled to match
+  // the backend totalDue semantics (unpaid balances only — paid records
+  // contribute zero, neverinto the outstanding amount).
+  const outstandingBalance = fees.reduce(
+    (sum, fee) => sum + Math.max(0, (fee.totalAmount || 0) - (fee.paidAmount || 0)),
+    0
   );
 
   return (
@@ -142,6 +167,11 @@ export default function StudentFeesPage() {
         <p className="text-gray-500 mt-1">
           Manage pending tuition, track receipts, and securely pay online.
         </p>
+        {fees.length > 0 && (
+          <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mt-2">
+            Total outstanding balance: {fmt(outstandingBalance)}
+          </p>
+        )}
       </div>
 
       {/* Stripe checkout modal */}

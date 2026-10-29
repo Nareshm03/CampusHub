@@ -36,6 +36,19 @@ export default function ProfilePage() {
         const response = await api.get('/faculty/me');
         setProfileData(response.data.data);
         setSubjects(response.data.data.subjects || []);
+      } else if (user.role === 'PARENT') {
+        // Parents see their own account (from the session user) plus the
+        // approved linked child (read-only). No profile edits happen here —
+        // role, linkage and child data are never parent-mutable.
+        try {
+          const response = await api.get('/parent/child');
+          setProfileData(response.data.data);
+        } catch (err) {
+          // Unlinked parent: own account still renders below.
+          if (err.response?.status !== 404) throw err;
+          setProfileData(null);
+        }
+        setSubjects([]);
       }
     } catch (error) {
       setError('Failed to fetch profile data');
@@ -53,7 +66,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <ProtectedRoute allowedRoles={['STUDENT', 'FACULTY']}>
+    <ProtectedRoute allowedRoles={['STUDENT', 'FACULTY', 'PARENT']}>
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
@@ -72,9 +85,9 @@ export default function ProfilePage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="space-y-6">
-            <ProfileCard 
-              user={profileData?.userId || user} 
-              profilePhoto={profileData?.profilePhoto}
+            <ProfileCard
+              user={user.role === 'PARENT' ? user : (profileData?.userId || user)}
+              profilePhoto={user.role === 'PARENT' ? user?.profilePhoto : profileData?.profilePhoto}
             />
             
             {(user.role === 'STUDENT' || user.role === 'FACULTY') && profileData && (
@@ -165,6 +178,36 @@ export default function ProfilePage() {
                   </>
                 )}
                 
+                {user.role === 'PARENT' && (
+                  <>
+                    <div>
+                      <label className="text-sm font-medium text-gray-500 dark:text-gray-400">Role</label>
+                      <p className="text-gray-900 dark:text-white">Parent</p>
+                    </div>
+                    {profileData ? (
+                      <>
+                        <div>
+                          <label className="text-sm font-medium text-gray-500 dark:text-gray-400">Linked Child</label>
+                          <p className="text-gray-900 dark:text-white">{profileData.userId?.name || 'N/A'}</p>
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-gray-500 dark:text-gray-400">Child USN</label>
+                          <p className="text-gray-900 dark:text-white">{profileData.usn || 'N/A'}</p>
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-gray-500 dark:text-gray-400">Child Semester</label>
+                          <p className="text-gray-900 dark:text-white">{profileData.semester || 'N/A'}</p>
+                        </div>
+                      </>
+                    ) : (
+                      <div>
+                        <label className="text-sm font-medium text-gray-500 dark:text-gray-400">Linked Child</label>
+                        <p className="text-gray-900 dark:text-white">No child linked yet — link from your dashboard.</p>
+                      </div>
+                    )}
+                  </>
+                )}
+
                 {user.role === 'FACULTY' && profileData && (
                   <>
                     <div>

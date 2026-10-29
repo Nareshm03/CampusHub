@@ -13,7 +13,7 @@ async function createDepartment(name = 'Computer Science', code = 'CS') {
   return Department.create({ name: `${name}`, code: `${code}${counter}` });
 }
 
-async function createUser({ name = 'Test User', email, role = 'STUDENT', department }) {
+async function createUser({ name = 'Test User', email, role = 'STUDENT', department, isEmailVerified = true }) {
   const finalEmail = email || `${role.toLowerCase()}.${uniq('u')}@test.com`;
   const user = new User({
     name,
@@ -21,6 +21,7 @@ async function createUser({ name = 'Test User', email, role = 'STUDENT', departm
     password: 'Passw0rd!',
     role,
     department: department || null,
+    isEmailVerified,
   });
   await user.save();
   return user;

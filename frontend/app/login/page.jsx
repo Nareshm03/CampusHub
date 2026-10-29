@@ -1,10 +1,11 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
+import api from '../../lib/axios';
 import { EnvelopeIcon, LockClosedIcon, EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
 
 export default function LoginPage() {
@@ -12,8 +13,35 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const { login, user, loading: authLoading } = useAuth();
   const router = useRouter();
+
+  // If a session already exists, send the user to their role dashboard.
+  // Wait for auth initialization to finish so we don't bounce a still-
+  // hydrating user (which would cause a redirect loop).
+  useEffect(() => {
+    if (authLoading) return;
+    if (user) {
+      router.replace(`/dashboard/${user.role.toLowerCase()}`);
+    }
+  }, [user, authLoading, router]);
+
+  const [resendLoading, setResendLoading] = useState(false);
+  const [showResend, setShowResend] = useState(false);
+
+  const handleResend = async (e) => {
+    e.preventDefault();
+    setResendLoading(true);
+    try {
+      await api.post('/auth/resend-verification', { email });
+      setShowResend(false);
+      toast.success('Verification email sent. Please check your inbox.');
+    } catch (err) {
+      toast.error('Could not send verification email. Please try again later.');
+    } finally {
+      setResendLoading(false);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -25,7 +53,13 @@ export default function LoginPage() {
         router.push(`/dashboard/${result.role.toLowerCase()}`);
       }
     } catch (error) {
-      toast.error(error.response?.data?.error || 'Login failed');
+      const data = error.response?.data;
+      if (data?.error && String(data.error).includes('Email verification required')) {
+        setShowResend(true);
+        toast.error(data.error);
+      } else {
+        toast.error(data?.error || 'Login failed');
+      }
     } finally {
       setLoading(false);
     }
@@ -113,6 +147,26 @@ export default function LoginPage() {
               ) : 'Sign In'}
             </button>
           </form>
+
+          {showResend && (
+            <div className="mt-6 p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+              <p className="text-sm text-amber-800 dark:text-amber-200 mb-3">
+                Your email address needs to be verified before you can sign in.
+              </p>
+              <form onSubmit={handleResend} className="flex flex-col sm:flex-row gap-3">
+                <button
+                  type="submit"
+                  disabled={resendLoading}
+                  className="w-full sm:w-auto bg-primary-600 text-white text-sm font-medium py-2 rounded-lg hover:bg-primary-700 disabled:opacity-50 transition-colors"
+                >
+                  {resendLoading ? 'Sending...' : 'Resend verification email'}
+                </button>
+              </form>
+              <p className="text-xs text-amber-600 dark:text-amber-400 mt-2">
+                Check your inbox (and spam folder) for the verification link.
+              </p>
+            </div>
+          )}
 
           <p className="text-center text-gray-500 text-sm mt-6">
             Don't have an account?{' '}

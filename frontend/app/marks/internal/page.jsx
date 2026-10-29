@@ -28,44 +28,39 @@ export default function InternalMarksPage() {
       
       // Handle different user roles
       if (user?.role === 'PARENT') {
-        // For parents, try sessionStorage first, then fetch if needed
-        let dashboard;
-        const storedDashboard = sessionStorage.getItem('parentDashboard');
-        
-        if (storedDashboard) {
-          dashboard = JSON.parse(storedDashboard);
-        } else {
-          // Fetch parent dashboard if not in sessionStorage
-          const parentRes = await api.get('/parent/dashboard');
-          if (!parentRes?.data?.linked || !parentRes?.data?.data) {
-            toast.error('No linked student found');
-            return;
-          }
-          dashboard = parentRes.data.data;
-          sessionStorage.setItem('parentDashboard', JSON.stringify(dashboard));
+        // Parents read the linked-child marks endpoint (same scope as the
+        // parent dashboard). The generic /marks/student/:id route enforces
+        // student/faculty ownership and denies parents, so it must not be
+        // used here. No sessionStorage cache: stale records from another
+        // account must never render.
+        const parentRes = await api.get('/parent/dashboard');
+        if (!parentRes?.data?.linked || !parentRes?.data?.data) {
+          toast.error('No linked student found');
+          return;
         }
-        
+        const dashboard = parentRes.data.data;
+
         // Fetch the full student profile to get the _id
         const studentProfile = await api.get('/parent/child');
         if (!studentProfile?.data?.data) {
           toast.error('Failed to get student profile');
           return;
         }
-        
+
         studentId = studentProfile.data.data._id;
         setStudentData({
           _id: studentProfile.data.data._id,
           name: studentProfile.data.data.userId?.name || dashboard.student?.name,
           usn: studentProfile.data.data.usn || dashboard.student?.usn
         });
-        
+
         if (!studentId) {
           toast.error('Student information not available');
           return;
         }
-        
+
         // Fetch marks for the linked student
-        const response = await api.get(`/marks/student/${studentId}`);
+        const response = await api.get('/parent/child/marks');
         const marksData = response.data.data || [];
         processMarks(marksData);
       } else {

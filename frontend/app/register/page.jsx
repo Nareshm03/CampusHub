@@ -1,5 +1,5 @@
 'use client';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -9,6 +9,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { toast } from 'sonner';
 import api from '../../lib/axios';
+import { useAuth } from '../../context/AuthContext';
 
 // Public self-registration offers unprivileged roles only (server-enforced
 // in authController.register). Staff accounts are created by an admin.
@@ -58,14 +59,25 @@ function FieldInput({ label, icon: Icon, error, children }) {
 const inputClass = "w-full px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200";
 
 export default function Register() {
-  const [formData, setFormData] = useState({ name: '', email: '', password: '', confirmPassword: '', role: 'STUDENT', department: '', studentUsn: '' });
+  const [formData, setFormData] = useState({ name: '', email: '', password: '', confirmPassword: '', role: 'STUDENT', department: '', usn: '', semester: '', studentUsn: '' });
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
 
   const strength = useMemo(() => getPasswordStrength(formData.password), [formData.password]);
+
+  // If a session already exists, send the user to their role dashboard.
+  // Wait for auth initialization to finish so we don't bounce a still-
+  // hydrating user (which would cause a redirect loop).
+  useEffect(() => {
+    if (authLoading) return;
+    if (user) {
+      router.replace(`/dashboard/${user.role.toLowerCase()}`);
+    }
+  }, [user, authLoading, router]);
 
   const set = (field) => (e) => setFormData(prev => ({ ...prev, [field]: e.target.value }));
 
@@ -83,7 +95,11 @@ export default function Register() {
       }
     }
     if (formData.password !== formData.confirmPassword) e.confirmPassword = 'Passwords do not match';
-    if (formData.role !== 'PARENT' && !formData.department.trim()) e.department = 'Department is required';
+    if (formData.role === 'STUDENT') {
+      if (!formData.department.trim()) e.department = 'Department is required';
+      if (!formData.usn.trim()) e.usn = 'USN (Student ID) is required';
+      if (!formData.semester) e.semester = 'Semester is required';
+    }
     if (formData.role === 'PARENT' && !formData.studentUsn.trim()) e.studentUsn = 'Student USN is required to link your account';
     setErrors(e);
     return Object.keys(e).length === 0;
@@ -99,21 +115,15 @@ export default function Register() {
       if (formData.role === 'PARENT') {
         delete payload.department;
       }
-      await api.post('/auth/register', payload);
-      // If parent, link student after registration
-      if (formData.role === 'PARENT' && studentUsn.trim()) {
-        try {
-          const loginRes = await api.post('/auth/login', { email: formData.email, password: formData.password });
-          if (loginRes.data?.token) {
-            localStorage.setItem('token', loginRes.data.token);
-            await api.post('/parent/link-student', { usn: studentUsn.trim() });
-            localStorage.removeItem('token');
-          }
-        } catch {
-          // Non-fatal — parent can link from dashboard
-        }
+      const res = await api.post('/auth/register', payload);
+      // Registration no longer issues an access token. The account is
+      // created unverified; the user must verify their email before
+      // signing in. Parent linking happens after verification + login.
+      if (res.data?.verified === false && !res.data?.emailSent) {
+        toast.warning('Account created. Verification email could not be sent — you can request a new one on the login page.');
+      } else {
+        toast.success('Account created! Please check your email to verify your account before signing in.');
       }
-      toast.success('Account created! Please sign in.');
       router.push('/login');
     } catch (error) {
       const data = error.response?.data;
@@ -252,17 +262,41 @@ export default function Register() {
                 </select>
               </FieldInput>
 
-              {formData.role !== 'PARENT' ? (
-                <FieldInput label="Department" icon={BuildingOfficeIcon} error={errors.department}>
-                  <input
-                    type="text"
-                    value={formData.department}
-                    onChange={set('department')}
-                    className={`${inputClass} ${errors.department ? 'border-red-400 focus:ring-red-400' : ''}`}
-                    placeholder="e.g. Computer Science"
-                    disabled={loading}
-                  />
-                </FieldInput>
+              {formData.role === 'STUDENT' ? (
+                <>
+                  <FieldInput label="Department" icon={BuildingOfficeIcon} error={errors.department}>
+                    <input
+                      type="text"
+                      value={formData.department}
+                      onChange={set('department')}
+                      className={`${inputClass} ${errors.department ? 'border-red-400 focus:ring-red-400' : ''}`}
+                      placeholder="e.g. Computer Science"
+                      disabled={loading}
+                    />
+                  </FieldInput>
+                  <FieldInput label="USN (Student ID)" icon={AcademicCapIcon} error={errors.usn}>
+                    <input
+                      type="text"
+                      value={formData.usn}
+                      onChange={set('usn')}
+                      className={`${inputClass} ${errors.usn ? 'border-red-400 focus:ring-red-400' : ''}`}
+                      placeholder="e.g. 1RV21CS001"
+                      disabled={loading}
+                    />
+                  </FieldInput>
+                  <FieldInput label="Semester" error={errors.semester}>
+                    <input
+                      type="number"
+                      min={1}
+                      max={8}
+                      value={formData.semester}
+                      onChange={set('semester')}
+                      className={`${inputClass} ${errors.semester ? 'border-red-400 focus:ring-red-400' : ''}`}
+                      placeholder="1-8"
+                      disabled={loading}
+                    />
+                  </FieldInput>
+                </>
               ) : (
                 <FieldInput label="Child's USN" icon={AcademicCapIcon} error={errors.studentUsn}>
                   <input
